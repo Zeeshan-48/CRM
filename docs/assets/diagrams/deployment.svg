@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">AWS deployment</title>
+  <desc id="desc">AWS deployment: browsers load the tenant app and the operator console from CloudFront backed by S3, and call the API through an Application Load Balancer. Connected products and provider callbacks reach the same load balancer. API tasks run on ECS Fargate in private subnets, each a Node cluster with one jobs worker, plus a one-off migrate task. They use RDS PostgreSQL, ElastiCache Redis, an S3 files bucket, SES with SNS and SQS for delivery events and inbound mail, Secrets Manager for secrets and KMS for encryption at rest.</desc>
+  <style>
+    .bg { fill: #f8fafc; }
+    .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+    .acc { fill: #fdeef6; stroke: #c0267e; stroke-width: 1.6; }
+    .ext { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .zone { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 6 5; }
+    .h { font: 600 20px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .t { font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .s { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #475569; }
+    .m { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f172a; }
+    .k { font: 600 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #a01f69; }
+    .ln { stroke: #64748b; stroke-width: 1.5; fill: none; }
+    .ld { stroke: #64748b; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+    .la { stroke: #c0267e; stroke-width: 1.8; fill: none; }
+    .ah { fill: #64748b; }
+    .aa { fill: #c0267e; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0b1220; }
+      .box, .ext { fill: #111a2b; stroke: #2b3a55; }
+      .acc { fill: #3a0f27; stroke: #e56ab0; }
+      .zone { stroke: #475569; }
+      .h, .t, .m { fill: #e2e8f0; }
+      .s { fill: #94a3b8; }
+      .k { fill: #f09ac8; }
+      .ln, .ld { stroke: #7c8aa5; }
+      .ah { fill: #7c8aa5; }
+      .la { stroke: #e56ab0; }
+      .aa { fill: #e56ab0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="aa" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="720" rx="14"/>
+  <text class="h" x="40" y="48">AWS deployment</text>
+  <text class="s" x="40" y="72">Terraform in infra/terraform: one module per concern, environments in infra/terraform/envs.</text>
+
+  <rect class="box" x="40" y="110" width="180" height="70" rx="10"/>
+  <text class="t" x="56" y="136">Browsers</text>
+  <text class="s" x="56" y="157">staff and operators</text>
+  <rect class="box" x="40" y="330" width="180" height="90" rx="10"/>
+  <text class="t" x="56" y="356">Servers</text>
+  <text class="s" x="56" y="377">connected products,</text>
+  <text class="s" x="56" y="397">provider callbacks</text>
+
+  <rect class="box" x="260" y="110" width="200" height="70" rx="10"/>
+  <text class="t" x="276" y="136">CloudFront</text>
+  <text class="s" x="276" y="157">tenant app, console</text>
+  <rect class="box" x="260" y="210" width="200" height="70" rx="10"/>
+  <text class="t" x="276" y="236">S3 static buckets</text>
+  <text class="s" x="276" y="257">built SPA files</text>
+  <rect class="acc" x="260" y="320" width="200" height="110" rx="10"/>
+  <text class="t" x="276" y="346">Load balancer</text>
+  <text class="s" x="276" y="367">HTTPS, one API host</text>
+  <text class="m" x="276" y="389">/up</text>
+  <text class="s" x="306" y="389">health check</text>
+  <text class="m" x="276" y="411">/api/*</text>
+  <text class="s" x="330" y="411">to api tasks</text>
+
+  <path class="ln" d="M220 145 L258 145" marker-end="url(#a)"/>
+  <path class="ln" d="M360 180 L360 208" marker-end="url(#a)"/>
+  <path class="la" d="M130 180 L130 300 L240 300 L240 360 L258 360" marker-end="url(#b)"/>
+  <text class="k" x="138" y="290">API calls</text>
+  <path class="la" d="M220 400 L258 400" marker-end="url(#b)"/>
+
+  <rect class="zone" x="500" y="100" width="360" height="440" rx="14"/>
+  <text class="t" x="520" y="126">Private subnets, ECS Fargate</text>
+  <rect class="acc" x="530" y="150" width="300" height="160" rx="10"/>
+  <text class="t" x="546" y="176">api service (N tasks)</text>
+  <text class="s" x="546" y="198">Node cluster: a worker per vCPU</text>
+  <text class="s" x="546" y="218">tenant, operator, ingest planes</text>
+  <text class="s" x="546" y="238">webhooks: WhatsApp, Exotel, billing</text>
+  <text class="s" x="546" y="262">one jobs worker per task:</text>
+  <text class="s" x="546" y="282">BullMQ scheduler (ticks once</text>
+  <text class="s" x="546" y="302">across tasks), SQS consumers</text>
+  <rect class="box" x="530" y="330" width="300" height="70" rx="10"/>
+  <text class="t" x="546" y="356">migrate (one-off task)</text>
+  <text class="m" x="546" y="379">pnpm db:migrate</text>
+  <rect class="box" x="530" y="420" width="300" height="70" rx="10"/>
+  <text class="t" x="546" y="446">NAT egress</text>
+  <text class="s" x="546" y="467">WhatsApp, Twilio, Exotel, payments, AI</text>
+  <path class="la" d="M460 360 L528 250" marker-end="url(#b)"/>
+  <path class="ln" d="M680 310 L680 418" marker-end="url(#a)"/>
+
+  <rect class="box" x="900" y="110" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="136">RDS PostgreSQL</text>
+  <text class="s" x="916" y="157">all CRM data, KMS encrypted</text>
+  <rect class="box" x="900" y="182" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="208">ElastiCache Redis</text>
+  <text class="s" x="916" y="229">job schedule, rate limits, throttle</text>
+  <rect class="box" x="900" y="254" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="280">S3 files bucket</text>
+  <text class="s" x="916" y="301">documents, call recordings</text>
+  <rect class="box" x="900" y="326" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="352">SES, SNS, SQS</text>
+  <text class="s" x="916" y="373">sending, delivery events, inbound</text>
+  <rect class="box" x="900" y="398" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="424">Secrets Manager</text>
+  <text class="s" x="916" y="445">JWT_SECRET, credentials key, keys</text>
+  <rect class="box" x="900" y="470" width="260" height="62" rx="10"/>
+  <text class="t" x="916" y="496">KMS</text>
+  <text class="s" x="916" y="517">encryption at rest</text>
+  <path class="ln" d="M830 170 L898 141" marker-end="url(#a)"/>
+  <path class="ln" d="M830 190 L898 213" marker-end="url(#a)"/>
+  <path class="ln" d="M830 215 L898 285" marker-end="url(#a)"/>
+  <path class="ln" d="M830 240 L898 357" marker-end="url(#a)"/>
+  <path class="ld" d="M830 265 L898 429" marker-end="url(#a)"/>
+
+  <rect class="zone" x="40" y="580" width="1120" height="110" rx="12"/>
+  <text class="t" x="60" y="610">Notes</text>
+  <text class="s" x="60" y="634">Each api task runs its own cluster and its own jobs worker; with Redis the BullMQ scheduler fires each sweep once across all tasks.</text>
+  <text class="s" x="60" y="656">The SPAs are static: point VITE_API_BASE_URL at the load balancer host and list both CloudFront origins in CORS_ORIGINS.</text>
+  <text class="s" x="60" y="678">TRUST_PROXY counts the proxies in front of the API (load balancer only: 1), so rate limits see the real client IP.</text>
+</svg>

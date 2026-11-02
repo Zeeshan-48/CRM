@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Overlay: the local containers against REAL AWS resources (from envs/aws-dev, or your
+# own). Postgres and Redis stay local; mail goes through real SES, files to a real S3
+# bucket, and the API long-polls the real SES event queue. Resource names come from
+# .env.aws; the S3 client uses your AWS profile, mounted read-only.
+#
+#   cp deploy/compose/.env.aws.example deploy/compose/.env.aws   # then edit
+#   make up-aws
+#
+# make up-aws passes .env.aws as a second --env-file, so its values both interpolate the
+# base's ${NAME:-default} entries (AWS_S3_BUCKET, AWS_REGION, ...) and, through env_file
+# below, add the keys the base does not set (SES_EVENTS_QUEUE_URL, ...). Check what the
+# API will get with:
+#   docker compose --env-file deploy/compose/.env --env-file deploy/compose/.env.aws \
+#     -f deploy/compose/compose.yaml -f deploy/compose/compose.aws.yaml config api
+# ─────────────────────────────────────────────────────────────────────────────
+x-aws-env: &aws-env
+  AWS_PROFILE: ${AWS_PROFILE:-default}
+  # SES refuses an unverified sender, so there is no usable default.
+  AWS_SES_FROM_EMAIL: ${AWS_SES_FROM_EMAIL:?set AWS_SES_FROM_EMAIL in deploy/compose/.env.aws}
+  # The SES and SQS clients sign with these static keys (an IAM user allowed to send
+  # through the identity and read the queues). Secrets: keep them in .env, not .env.aws.
+  AWS_SES_ACCESS_KEY: ${AWS_SES_ACCESS_KEY:-}
+  AWS_SES_SECRET_KEY: ${AWS_SES_SECRET_KEY:-}
+
+services:
+  migrate:
+    env_file: [.env.aws]
+
+  api:
+    env_file: [.env, .env.aws]
+    environment:
+      <<: *aws-env
+    volumes:
+      - ${HOME}/.aws:/home/node/.aws:ro
+      - files:/app/.local-storage

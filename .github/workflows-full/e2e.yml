@@ -1,0 +1,65 @@
+name: e2e
+
+# The full stack on the Floci AWS emulator: Terraform provisions KMS, Secrets Manager,
+# S3, Route53, SES and the SES events queue; every provider (WhatsApp, Twilio, Exotel,
+# Razorpay, Stripe, billing) runs simulated and AI uses the offline engine, so no
+# account or key is needed anywhere. `make demo` seeds plans, an operator and two demo
+# tenants; smoke calls sign in through the API, then Playwright drives the apps (when
+# e2e/tests exists).
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-floci:
+    name: end-to-end on Floci
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: docker/setup-buildx-action@v3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+        if: hashFiles('e2e/tests/**') != ''
+      - name: Stack up
+        run: make up
+      - name: Demo data
+        run: make demo
+      - name: Smoke (health, a workspace and an operator sign-in)
+        run: |
+          pw=$(grep '^CRM_DEMO_PASSWORD=' deploy/compose/.env | cut -d= -f2-)
+          curl -fsS http://localhost:5066/api/health
+          curl -fsS http://localhost:5066/api/v1/auth/login -H 'Content-Type: application/json' \
+            -d "{\"email\":\"maya@northwind.example.com\",\"password\":\"$pw\"}" >/dev/null
+          curl -fsS http://localhost:5066/api/v1/operator/auth/login -H 'Content-Type: application/json' \
+            -d "{\"email\":\"root@example.com\",\"password\":\"$pw\"}" >/dev/null
+          curl -fsS http://localhost:3570/ >/dev/null
+          curl -fsS http://localhost:3580/ >/dev/null
+      - name: Browser tests
+        if: hashFiles('e2e/tests/**') != ''
+        run: pnpm e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            e2e/.report
+            e2e/.results
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p open-crm logs --tail 200 api web console migrate floci terraform

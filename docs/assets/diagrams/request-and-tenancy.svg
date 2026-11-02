@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">A tenant request and its tenancy checks</title>
+  <desc id="desc">A browser request passes the CORS allow-list, the per-IP rate limit, authenticateUser (JWT of type tenant, user and tenant loaded and ACTIVE), the entitlement gate (module enabled for the tenant, cached 60 seconds per worker) and RBAC (role grants the module, cached 60 seconds). Then the controller calls a service, which applies business rules and the record policy, and a repository whose query always filters on tenant_id before reaching PostgreSQL. Ingest, webhooks and the operator plane establish the tenant differently.</desc>
+  <style>
+    .bg { fill: #f8fafc; }
+    .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+    .acc { fill: #fdeef6; stroke: #c0267e; stroke-width: 1.6; }
+    .ext { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .zone { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 6 5; }
+    .h { font: 600 20px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .t { font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .s { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #475569; }
+    .m { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f172a; }
+    .k { font: 600 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #a01f69; }
+    .ln { stroke: #64748b; stroke-width: 1.5; fill: none; }
+    .ld { stroke: #64748b; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+    .la { stroke: #c0267e; stroke-width: 1.8; fill: none; }
+    .ah { fill: #64748b; }
+    .aa { fill: #c0267e; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0b1220; }
+      .box, .ext { fill: #111a2b; stroke: #2b3a55; }
+      .acc { fill: #3a0f27; stroke: #e56ab0; }
+      .zone { stroke: #475569; }
+      .h, .t, .m { fill: #e2e8f0; }
+      .s { fill: #94a3b8; }
+      .k { fill: #f09ac8; }
+      .ln, .ld { stroke: #7c8aa5; }
+      .ah { fill: #7c8aa5; }
+      .la { stroke: #e56ab0; }
+      .aa { fill: #e56ab0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="aa" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="560" rx="14"/>
+  <text class="h" x="40" y="48">A tenant request and its tenancy checks</text>
+  <text class="s" x="40" y="72">apps/api/src/app.ts, routes/index.ts (the M helper), middlewares/auth.middleware.ts, middlewares/module.middleware.ts</text>
+
+  <rect class="box" x="40" y="120" width="130" height="120" rx="10"/>
+  <text class="t" x="56" y="146">Browser</text>
+  <text class="s" x="56" y="168">apps/web</text>
+  <text class="m" x="56" y="192">Bearer JWT</text>
+
+  <rect class="box" x="200" y="120" width="170" height="120" rx="10"/>
+  <text class="t" x="216" y="146">CORS</text>
+  <text class="s" x="216" y="168">CORS_ORIGINS only</text>
+  <text class="k" x="216" y="222">else no CORS headers</text>
+
+  <rect class="box" x="390" y="120" width="170" height="120" rx="10"/>
+  <text class="t" x="406" y="146">Rate limit</text>
+  <text class="s" x="406" y="168">600 per min per IP</text>
+  <text class="s" x="406" y="188">Redis or in-process</text>
+  <text class="k" x="406" y="222">429</text>
+
+  <rect class="acc" x="580" y="120" width="170" height="120" rx="10"/>
+  <text class="t" x="596" y="146">Authenticate</text>
+  <text class="s" x="596" y="168">JWT type tenant</text>
+  <text class="s" x="596" y="188">load user + tenant</text>
+  <text class="s" x="596" y="208">both ACTIVE?</text>
+  <text class="k" x="596" y="228">401, 403 suspended</text>
+
+  <rect class="acc" x="770" y="120" width="170" height="120" rx="10"/>
+  <text class="t" x="786" y="146">Entitlement</text>
+  <text class="m" x="786" y="168">module.&lt;key&gt;</text>
+  <text class="s" x="786" y="188">enabled? 60 s cache</text>
+  <text class="k" x="786" y="222">403 not in plan</text>
+
+  <rect class="acc" x="960" y="120" width="170" height="120" rx="10"/>
+  <text class="t" x="976" y="146">RBAC</text>
+  <text class="s" x="976" y="168">user override, role</text>
+  <text class="s" x="976" y="188">row, built-in default</text>
+  <text class="k" x="976" y="222">403 role</text>
+
+  <path class="ln" d="M170 180 L198 180" marker-end="url(#a)"/>
+  <path class="ln" d="M370 180 L388 180" marker-end="url(#a)"/>
+  <path class="ln" d="M560 180 L578 180" marker-end="url(#a)"/>
+  <path class="la" d="M750 180 L768 180" marker-end="url(#b)"/>
+  <path class="la" d="M940 180 L958 180" marker-end="url(#b)"/>
+  <path class="la" d="M1045 240 L1045 298" marker-end="url(#b)"/>
+
+  <rect class="box" x="960" y="300" width="170" height="110" rx="10"/>
+  <text class="t" x="976" y="326">Controller</text>
+  <text class="s" x="976" y="348">req to service call</text>
+  <text class="s" x="976" y="368">sendSuccessResponse</text>
+
+  <rect class="box" x="770" y="300" width="170" height="110" rx="10"/>
+  <text class="t" x="786" y="326">Service</text>
+  <text class="s" x="786" y="348">business rules,</text>
+  <text class="s" x="786" y="368">capabilities, record</text>
+  <text class="s" x="786" y="388">policy, emit events</text>
+
+  <rect class="acc" x="580" y="300" width="170" height="110" rx="10"/>
+  <text class="t" x="596" y="326">Repository</text>
+  <text class="m" x="596" y="350">WHERE tenant_id</text>
+  <text class="m" x="596" y="370">      = ?</text>
+  <text class="k" x="596" y="394">other tenant: 404</text>
+
+  <rect class="box" x="390" y="300" width="170" height="110" rx="10"/>
+  <text class="t" x="406" y="326">PostgreSQL</text>
+  <text class="s" x="406" y="348">one schema,</text>
+  <text class="s" x="406" y="368">tenant_id everywhere</text>
+
+  <path class="ln" d="M960 355 L942 355" marker-end="url(#a)"/>
+  <path class="ln" d="M770 355 L752 355" marker-end="url(#a)"/>
+  <path class="la" d="M580 355 L562 355" marker-end="url(#b)"/>
+
+  <rect class="zone" x="40" y="290" width="320" height="130" rx="12"/>
+  <text class="t" x="56" y="316">Other ways in</text>
+  <text class="s" x="56" y="340">Ingest: API key gives tenant + product</text>
+  <text class="s" x="56" y="362">Webhooks: signature or URL token</text>
+  <text class="s" x="56" y="384">Operator: operator JWT, no tenant</text>
+  <text class="s" x="56" y="406">Booking: tenant slug + link slug</text>
+
+  <rect class="zone" x="40" y="450" width="1090" height="80" rx="12"/>
+  <text class="s" x="56" y="478">Before this pipeline: /up and the raw-body webhook mounts, which skip the JSON parser and the global limiter.</text>
+  <text class="s" x="56" y="502">Setup routes add requireCapability (role only, no entitlement); payment gateway setup adds requireRole("ADMIN").</text>
+</svg>

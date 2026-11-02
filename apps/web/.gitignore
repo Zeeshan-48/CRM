@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+
+*.local
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*
+
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# local env (use .env.example as the template)
+.env
+.gstack/

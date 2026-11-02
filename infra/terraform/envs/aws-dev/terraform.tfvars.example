@@ -1,0 +1,37 @@
+# Copy to terraform.tfvars (git-ignored) and replace every placeholder.
+region      = "us-east-1"
+name_prefix = "crm-dev" # 3-24 lowercase letters, digits, hyphens
+
+domain          = "crm.dev.example.com"         # the CRM workspace app; its /api/* is the API
+console_domain  = "console.crm.dev.example.com" # the operator console
+route53_zone_id = "<ROUTE53_HOSTED_ZONE_ID>" # automatic certificates + DNS
+# Without a Route53 zone, bring both certificates instead and publish the DNS records
+# from the outputs (cdn_dns_records, mail_dns_records):
+# certificate_arn     = "<regional ACM certificate for both hosts>"
+# cdn_certificate_arn = "<us-east-1 ACM certificate for both hosts>"
+
+# mail_domain    = "example.com"           # defaults to domain
+# inbound_domain = "inbound.crm.dev.example.com" # SES inbound mail for the CRM inbox (optional)
+
+# image_tag is passed by `make aws-deploy` (the git commit); set it here to pin a release.
+# image_tag = "0.1.0"
+
+# alarm_email = "oncall@example.com"
+
+# Graviton tasks (cheaper). Build the images to match: PLATFORM=linux/arm64 make aws-deploy
+# cpu_architecture = "ARM64"
+
+# JWT_SECRET and CREDENTIALS_ENCRYPTION_KEY are generated into <name_prefix>/app.
+
+# Platform provider keys. Every provider without one runs simulated (and AI uses the
+# deterministic offline engine). Values here land in Terraform state; to keep them out,
+# pass "set-me" for each key you want and replace the secret by hand afterwards:
+#   aws secretsmanager put-secret-value --secret-id <name_prefix>/providers \
+#     --secret-string '{"OPENAI_API_KEY":"<key>","TWILIO_ACCOUNT_SID":"<sid>","TWILIO_AUTH_TOKEN":"<token>"}'
+# then roll the api (make aws-deploy, or force a new deployment).
+# provider_secrets = {
+#   OPENAI_API_KEY     = "set-me"
+#   TWILIO_ACCOUNT_SID = "set-me"
+#   TWILIO_AUTH_TOKEN  = "set-me"
+# }
+# simulate_providers = true

@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="710" viewBox="0 0 1240 710" role="img" aria-labelledby="title desc">
+  <title id="title">Events and automation</title>
+  <desc id="desc">Two flows. Domain events: CRM services for leads, deals and tickets call engine.emit in the API process, which runs the tenant's active workflows whose trigger equals the event, executes their actions in order and writes one automation_runs row per run; the same call queues one webhook_deliveries row per subscriber, which the webhook-dispatch job sends signed to the subscriber's endpoint with retries. Product events: a connected product sends events through the SDK or the browser tracker to POST /ingest/events, which checks the key, origin, rate limit and idempotency key, resolves the event definition, resolves the person through the identity graph and stores the event in activity_events as recorded or orphan. Recorded events are folded into the engagement profile, the intent score is recomputed from active event weights, and the result feeds the signals feed and the lead score. LIVE product events attached to a lead also emit product triggers back into engine.emit.</desc>
+  <style>
+    .bg { fill: #f8fafc; }
+    .box { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.2; }
+    .acc { fill: #fdeef6; stroke: #c0267e; stroke-width: 1.6; }
+    .ext { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .zone { fill: none; stroke: #94a3b8; stroke-width: 1.2; stroke-dasharray: 6 5; }
+    .h { font: 600 20px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .t { font: 600 15px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .s { font: 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #475569; }
+    .lane { font: 600 12px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #64748b; letter-spacing: .06em; }
+    .m { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f172a; }
+    .k { font: 600 13px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #9c1f66; }
+    .ln { stroke: #64748b; stroke-width: 1.5; fill: none; }
+    .la { stroke: #c0267e; stroke-width: 1.8; fill: none; }
+    .ah { fill: #64748b; }
+    .aa { fill: #c0267e; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0b1220; }
+      .box { fill: #111a2b; stroke: #2b3a55; }
+      .acc { fill: #3a0f27; stroke: #e56ab0; }
+      .ext { fill: #111a2b; stroke: #475569; }
+      .zone { stroke: #475569; }
+      .h, .t, .m { fill: #e2e8f0; }
+      .s { fill: #94a3b8; }
+      .lane { fill: #7c8aa5; }
+      .k { fill: #f09ccb; }
+      .ln { stroke: #7c8aa5; }
+      .ah { fill: #7c8aa5; }
+      .la { stroke: #e56ab0; }
+      .aa { fill: #e56ab0; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0L10 5L0 10z"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="aa" d="M0 0L10 5L0 10z"/></marker>
+  </defs>
+  <rect class="bg" width="1240" height="710" rx="14"/>
+  <text class="h" x="30" y="46">Events and automation</text>
+  <text class="s" x="30" y="70">services/engine.service.ts, services/activity-events.service.ts, jobs/webhook-dispatch.job.ts. Everything runs in the API process.</text>
+
+  <!-- Domain events -->
+  <text class="lane" x="30" y="110">DOMAIN EVENTS</text>
+
+  <rect class="box" x="30" y="125" width="210" height="90" rx="10"/>
+  <text class="t" x="46" y="152">CRM services</text>
+  <text class="s" x="46" y="174">leads, deals, tickets</text>
+  <text class="m" x="46" y="196">lead.created, deal.won</text>
+
+  <rect class="acc" x="270" y="125" width="210" height="90" rx="10"/>
+  <text class="t" x="286" y="152">engine.emit</text>
+  <text class="s" x="286" y="174">awaited after the write,</text>
+  <text class="s" x="286" y="196">no outbox, no retry</text>
+
+  <rect class="box" x="510" y="125" width="210" height="90" rx="10"/>
+  <text class="t" x="526" y="152">Matching workflows</text>
+  <text class="s" x="526" y="174">same tenant, active,</text>
+  <text class="s" x="526" y="196">trigger = event name</text>
+
+  <rect class="box" x="750" y="125" width="210" height="90" rx="10"/>
+  <text class="t" x="766" y="152">Actions, in order</text>
+  <text class="s" x="766" y="174">assign, WhatsApp, email,</text>
+  <text class="s" x="766" y="196">task, tag, ticket, notify</text>
+
+  <rect class="box" x="990" y="125" width="210" height="90" rx="10"/>
+  <text class="t" x="1006" y="152">automation_runs</text>
+  <text class="s" x="1006" y="174">one row per run,</text>
+  <text class="s" x="1006" y="196">a log line per action</text>
+
+  <rect class="box" x="510" y="250" width="210" height="80" rx="10"/>
+  <text class="t" x="526" y="277">webhook_deliveries</text>
+  <text class="s" x="526" y="299">one row per subscriber</text>
+  <text class="s" x="526" y="318">to the same event name</text>
+
+  <rect class="box" x="750" y="250" width="210" height="80" rx="10"/>
+  <text class="t" x="766" y="277">webhook-dispatch job</text>
+  <text class="s" x="766" y="299">every 15 s, claims 25</text>
+  <text class="s" x="766" y="318">retry 30 s, 2 m, 10 m, 1 h</text>
+
+  <rect class="ext" x="990" y="250" width="210" height="80" rx="10"/>
+  <text class="t" x="1006" y="277">Subscriber endpoint</text>
+  <text class="m" x="1006" y="299">X-CRM-Signature</text>
+  <text class="s" x="1006" y="318">https, no redirects, 10 s</text>
+
+  <path class="ln" d="M240 170 H266" marker-end="url(#a)"/>
+  <path class="la" d="M480 170 H506" marker-end="url(#b)"/>
+  <path class="ln" d="M720 170 H746" marker-end="url(#a)"/>
+  <path class="ln" d="M960 170 H986" marker-end="url(#a)"/>
+  <path class="ln" d="M480 200 H495 V290 H506" marker-end="url(#a)"/>
+  <path class="ln" d="M720 290 H746" marker-end="url(#a)"/>
+  <path class="ln" d="M960 290 H986" marker-end="url(#a)"/>
+
+  <path class="zone" d="M30 345 H1200"/>
+
+  <!-- Product triggers back into the engine -->
+  <path class="la" d="M1095 412 V378 H440 V219" marker-end="url(#b)"/>
+  <text class="k" x="470" y="370">product.* triggers (LIVE events attached to a lead, detached async)</text>
+
+  <!-- Product events -->
+  <text class="lane" x="30" y="400">PRODUCT EVENTS</text>
+
+  <rect class="ext" x="30" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="46" y="440">Connected product</text>
+  <text class="s" x="46" y="463">SDK with crm_sk_, or</text>
+  <text class="s" x="46" y="485">the tracker with crm_pk_</text>
+
+  <rect class="acc" x="270" y="412" width="210" height="100" rx="10"/>
+  <text class="m" x="286" y="440">POST /ingest/events</text>
+  <text class="s" x="286" y="463">key, origin, rate limit,</text>
+  <text class="s" x="286" y="485">idempotency_key dedupe</text>
+
+  <rect class="box" x="510" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="526" y="440">Event definition</text>
+  <text class="s" x="526" y="463">known name: ACTIVE</text>
+  <text class="s" x="526" y="485">unknown: NEEDS_REVIEW, 0</text>
+
+  <rect class="box" x="750" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="766" y="440">Identity graph</text>
+  <text class="s" x="766" y="463">user id, email, phone,</text>
+  <text class="s" x="766" y="485">anonymous id (no lead)</text>
+
+  <rect class="box" x="990" y="412" width="210" height="100" rx="10"/>
+  <text class="t" x="1006" y="440">activity_events</text>
+  <text class="s" x="1006" y="463">RECORDED, or ORPHAN</text>
+  <text class="s" x="1006" y="485">until identify claims it</text>
+
+  <rect class="box" x="990" y="566" width="210" height="100" rx="10"/>
+  <text class="t" x="1006" y="594">Engagement fold</text>
+  <text class="s" x="1006" y="617">lifecycle, plan, cart,</text>
+  <text class="s" x="1006" y="639">counters, top products</text>
+
+  <rect class="box" x="750" y="566" width="210" height="100" rx="10"/>
+  <text class="t" x="766" y="594">Intent score</text>
+  <text class="s" x="766" y="617">0 to 100, 14-day half-life;</text>
+  <text class="s" x="766" y="639">also every 15 min (rollup)</text>
+
+  <rect class="box" x="510" y="566" width="210" height="100" rx="10"/>
+  <text class="t" x="526" y="594">Signals, lead score</text>
+  <text class="m" x="526" y="617">GET /api/v1/signals</text>
+  <text class="s" x="526" y="639">score = max(CRM, product)</text>
+
+  <path class="ln" d="M240 462 H266" marker-end="url(#a)"/>
+  <path class="la" d="M480 462 H506" marker-end="url(#b)"/>
+  <path class="ln" d="M720 462 H746" marker-end="url(#a)"/>
+  <path class="ln" d="M960 462 H986" marker-end="url(#a)"/>
+  <path class="ln" d="M1095 512 V562" marker-end="url(#a)"/>
+  <path class="ln" d="M990 616 H964" marker-end="url(#a)"/>
+  <path class="ln" d="M750 616 H724" marker-end="url(#a)"/>
+  <path class="ln" d="M615 512 V540 H855 V562" marker-end="url(#a)"/>
+  <text class="s" x="690" y="534">ACTIVE weights only</text>
+
+  <!-- Legend -->
+  <rect class="acc" x="30" y="580" width="24" height="16" rx="4"/>
+  <text class="s" x="64" y="593">Entry points and the trigger path</text>
+  <rect class="ext" x="30" y="610" width="24" height="16" rx="4"/>
+  <text class="s" x="64" y="623">Outside the deployment</text>
+  <text class="s" x="30" y="653">TEST products: stored, never scored or triggered.</text>
+</svg>

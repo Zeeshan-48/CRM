@@ -1,0 +1,61 @@
+variable "name_prefix" {
+  description = "Prefix for every resource name."
+  type        = string
+}
+
+variable "domain" {
+  description = "Sending domain verified in SES, e.g. \"mail.example.com\". Mail is sent as no-reply@<domain>."
+  type        = string
+}
+
+variable "mail_from_subdomain" {
+  description = "Custom MAIL FROM subdomain (bounces), so SPF aligns with the sending domain."
+  type        = string
+  default     = "bounce"
+}
+
+variable "manage_dns" {
+  description = "Create the DKIM, MAIL FROM and DMARC records in route53_zone_id. A boolean rather than a null check on the zone id, which may be unknown until apply."
+  type        = bool
+  default     = false
+}
+
+variable "route53_zone_id" {
+  description = "Hosted zone that serves the domain (with manage_dns). Otherwise publish the `dns_records` output by hand."
+  type        = string
+  default     = null
+}
+
+variable "enable_event_metrics" {
+  description = "Publish delivery events (send, delivery, bounce, complaint, ...) to CloudWatch through the configuration set."
+  type        = bool
+  default     = true
+}
+
+variable "dmarc_policy" {
+  description = "DMARC policy to publish (none, quarantine, reject). Null skips the record, e.g. when the domain already has one."
+  type        = string
+  default     = "none"
+  validation {
+    condition     = var.dmarc_policy == null || contains(["none", "quarantine", "reject"], coalesce(var.dmarc_policy, "none"))
+    error_message = "dmarc_policy must be none, quarantine, reject or null."
+  }
+}
+
+variable "dmarc_report_address" {
+  description = "Aggregate-report address for DMARC. Defaults to dmarc-reports@<domain>."
+  type        = string
+  default     = null
+}
+
+variable "kms_key_arn" {
+  description = "CMK that encrypts the SNS topics (the kms module grants SES and SNS its use). Null uses no topic encryption."
+  type        = string
+  default     = null
+}
+
+variable "inbound_domain" {
+  description = "Domain (or subdomain, e.g. \"inbound.example.com\") whose mail SES receives and hands to the API (SES_INBOUND_QUEUE_URL). Null disables inbound mail. Activating it replaces the active SES receipt rule set of the account and region."
+  type        = string
+  default     = null
+}

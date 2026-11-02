@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Open CRM: the open-source agentic Customer OS for modern teams."
+    />
+    <title>Open CRM: the all-in-one Customer OS</title>
+    <script>
+      // Apply theme + tenant brand colour before first paint (no flash).
+      (function () {
+        try {
+          if (localStorage.getItem("crm-theme") === "dark") {
+            document.documentElement.classList.add("dark");
+          }
+          var raw = localStorage.getItem("crm-auth");
+          if (raw) {
+            var parsed = JSON.parse(raw);
+            var hex =
+              parsed &&
+              parsed.state &&
+              parsed.state.user &&
+              parsed.state.user.tenant &&
+              parsed.state.user.tenant.brand_color;
+            if (hex) {
+              var m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex).trim());
+              if (m) {
+                var n = parseInt(m[1], 16);
+                document.documentElement.style.setProperty(
+                  "--brand",
+                  ((n >> 16) & 255) + " " + ((n >> 8) & 255) + " " + (n & 255)
+                );
+              }
+            }
+          }
+        } catch (e) {
+          /* noop */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

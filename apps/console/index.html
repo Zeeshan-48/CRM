@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Open CRM operator console: onboard and manage CRM tenants, plans and entitlements."
+    />
+    <title>Open CRM Operator</title>
+    <script>
+      // The operator console is DARK by default. Apply the optional light
+      // mode before first paint (no flash) when the user opted into it.
+      (function () {
+        try {
+          if (localStorage.getItem("operator-theme") === "light") {
+            document.documentElement.classList.add("light");
+          }
+        } catch (e) {
+          /* noop */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,2014 @@
+generator kysely {
+  provider     = "prisma-kysely"
+  output       = "../src/db"
+  enumFileName = "enums.ts"
+  fileName     = "types.ts"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model operator_users {
+  id            String        @id
+  email         String        @unique
+  name          String
+  password_hash String
+  role          operator_role @default(OPERATOR)
+  status        user_status   @default(ACTIVE)
+  last_login_at DateTime?
+  created_at    DateTime
+  updated_at    DateTime
+
+  @@index([status])
+}
+
+model plans {
+  id            String   @id
+  key           String   @unique
+  name          String
+  description   String?
+  price_monthly Int      @default(0)
+  currency      String   @default("INR")
+  modules       Json
+  limits        Json
+  is_active     Boolean  @default(true)
+  sort_order    Int      @default(0)
+  created_at    DateTime
+  updated_at    DateTime
+}
+
+model tenants {
+  id                              String                       @id
+  slug                            String                       @unique
+  name                            String
+  domain                          String?
+  industry                        String?
+  plan_key                        String?
+  brand_color                     String                       @default("#b6207f")
+  email_domain                    String?
+  white_label                     Boolean                      @default(false)
+  status                          tenant_status                @default(ACTIVE)
+  config                          Json?
+  created_at                      DateTime
+  updated_at                      DateTime
+  email_sending_status            email_sending_status         @default(ACTIVE)
+  email_sending_status_changed_at DateTime?
+  account_contracts               account_contracts[]
+  accounts                        accounts[]
+  activities                      activities[]
+  agent_enrollments               agent_enrollments[]
+  agent_outreach                  agent_outreach[]
+  agent_runs                      agent_runs[]
+  agent_settings                  agent_settings[]
+  api_keys                        api_keys[]
+  activity_events                 activity_events[]
+  audit_logs                      audit_logs[]
+  // Product integration platform (see the section at the end of this file).
+  connected_apps                  connected_apps[]
+  products                        products[]
+  product_prices                  product_prices[]
+  product_offers                  product_offers[]
+  app_event_definitions           app_event_definitions[]
+  app_identities                  app_identities[]
+  engagement_profiles             engagement_profiles[]
+  deal_line_items                 deal_line_items[]
+  webhook_deliveries              webhook_deliveries[]
+  automation_runs                 automation_runs[]
+  booking_links                   booking_links[]
+  calendar_connections            calendar_connections[]
+  campaigns                       campaigns[]
+  contacts                        contacts[]
+  conversations                   conversations[]
+  deals                           deals[]
+  email_domain_health_checks      email_domain_health_checks[]
+  email_messages                  email_messages[]
+  email_reputation_events         email_reputation_events[]
+  email_sender_identities         email_sender_identities[]
+  email_sending_domains           email_sending_domains[]
+  email_suppressions              email_suppressions[]
+  email_templates                 email_templates[]
+  files                           files[]
+  integrations                    integrations[]
+  invoices                        invoices[]
+  lead_ingest_events              lead_ingest_events[]
+  leads                           leads[]
+  meetings                        meetings[]
+  messages                        messages[]
+  notifications                   notifications[]
+  payments                        payments[]
+  pipelines                       pipelines[]
+  platform_transactions           platform_transactions[]
+  reminders                       reminders[]
+  roles                           roles[]
+  saved_views                     saved_views[]
+  sla_policies                    sla_policies[]
+  stages                          stages[]
+  tasks                           tasks[]
+  tenant_razorpay                 tenant_razorpay[]
+  tenant_stripe                   tenant_stripe[]
+  tenant_subscriptions            tenant_subscriptions[]
+  tenant_telephony                tenant_telephony[]
+  telephony_numbers               telephony_numbers[]
+  ticket_replies                  ticket_replies[]
+  tickets                         tickets[]
+  users                           users[]
+  voice_calls                     voice_calls[]
+  webhooks                        webhooks[]
+  whatsapp_templates              whatsapp_templates[]
+  workflows                       workflows[]
+  kb_articles                     kb_articles[]
+  lead_documents                  lead_documents[]
+  tenant_entitlements             tenant_entitlements[]
+  tenant_whatsapp                 tenant_whatsapp[]
+}
+
+model tenant_entitlements {
+  id          String             @id
+  tenant_id   String
+  code        String
+  enabled     Boolean            @default(true)
+  limit_value Int?
+  source      entitlement_source @default(PLAN)
+  created_at  DateTime
+  updated_at  DateTime
+  tenants     tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, code])
+  @@index([tenant_id])
+}
+
+model operator_audit_logs {
+  id                String   @id
+  actor_operator_id String?
+  actor_email       String?
+  action            String
+  category          String
+  tenant_id         String?
+  resource_id       String?
+  summary           String
+  metadata          Json?
+  created_at        DateTime
+
+  @@index([created_at])
+  @@index([tenant_id])
+  @@index([action])
+}
+
+model users {
+  id                  String      @id
+  tenant_id           String
+  name                String
+  email               String
+  password_hash       String
+  role                String
+  status              user_status @default(ACTIVE)
+  permissions         Json?
+  territory           Json?
+  skills              Json?
+  avatar_color        String?
+  last_login_at       DateTime?
+  created_at          DateTime
+  updated_at          DateTime
+  phone               String?
+  // Agent presence toggle: inbound call routing skips unavailable agents.
+  available_for_calls Boolean     @default(true)
+  tenants             tenants     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email])
+  @@index([tenant_id, role])
+  @@index([tenant_id, status])
+}
+
+model roles {
+  id          String   @id
+  tenant_id   String
+  key         String
+  name        String
+  permissions Json
+  builtin     Boolean  @default(false)
+  created_at  DateTime
+  updated_at  DateTime
+  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, key])
+}
+
+model leads {
+  id                   String           @id
+  tenant_id            String
+  name                 String
+  email                String?
+  phone                String?
+  city                 String?
+  country              String           @default("India")
+  source               String?
+  campaign             String?
+  status               lead_status      @default(NEW)
+  owner_id             String?
+  tags                 Json?
+  // Website + social profile links, keyed by network (website/linkedin/x/...).
+  socials              Json?
+  notes                String?
+  budget               Boolean          @default(false)
+  score_total          Int              @default(0)
+  score_grade          lead_grade       @default(COLD)
+  score_breakdown      Json?
+  scored_at            DateTime?
+  converted_contact_id String?
+  converted_deal_id    String?
+  external_id          String?
+  external_source      String?
+  // Free-form platform snapshot (rolled-up signals from external platforms, e.g.
+  // plan_status, courses_published, checkout_abandoned). Not semantically owned
+  // like tags/socials/score_breakdown, a generic bag maintained by ingest.
+  custom_fields        Json?
+  last_activity_at     DateTime?
+  created_at           DateTime
+  updated_at           DateTime
+  lead_documents       lead_documents[]
+  tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, owner_id])
+  @@index([tenant_id, source])
+  @@index([tenant_id, score_grade])
+  @@index([tenant_id, created_at])
+}
+
+model lead_documents {
+  id          String   @id
+  tenant_id   String
+  lead_id     String
+  name        String
+  doc_type    String?
+  file_key    String?
+  url         String?
+  uploaded_by String?
+  created_at  DateTime
+  leads       leads    @relation(fields: [lead_id], references: [id], onDelete: Cascade)
+  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, lead_id])
+}
+
+model contacts {
+  id                     String            @id
+  tenant_id              String
+  name                   String
+  email                  String?
+  phone                  String?
+  company                String?
+  account_id             String?
+  title                  String?
+  city                   String?
+  owner_id               String?
+  tags                   Json?
+  socials                Json?
+  lifecycle              contact_lifecycle @default(LEAD)
+  converted_from_lead_id String?
+  last_activity_at       DateTime?
+  created_at             DateTime
+  updated_at             DateTime
+  tenants                tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, lifecycle])
+  @@index([tenant_id, account_id])
+  @@index([tenant_id, owner_id])
+}
+
+model accounts {
+  id                String              @id
+  tenant_id         String
+  name              String
+  industry          String?
+  size              String?
+  website           String?
+  owner_id          String?
+  departments       Json?
+  created_at        DateTime
+  updated_at        DateTime
+  account_contracts account_contracts[]
+  tenants           tenants             @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+model account_contracts {
+  id         String          @id
+  tenant_id  String
+  account_id String
+  // Set when the contract was auto-created from a won deal, also the
+  // idempotency key so re-winning the same deal never duplicates a contract.
+  deal_id    String?
+  title      String
+  value      Int             @default(0)
+  status     contract_status @default(ACTIVE)
+  start_at   DateTime?
+  end_at     DateTime?
+  created_at DateTime
+  updated_at DateTime
+  accounts   accounts        @relation(fields: [account_id], references: [id], onDelete: Cascade)
+  tenants    tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, account_id])
+  @@index([tenant_id, deal_id])
+}
+
+model pipelines {
+  id         String   @id
+  tenant_id  String
+  name       String
+  is_default Boolean  @default(false)
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  stages     stages[]
+
+  @@index([tenant_id])
+}
+
+model stages {
+  id          String    @id
+  tenant_id   String
+  pipeline_id String
+  name        String
+  sort_order  Int       @default(0)
+  won         Boolean   @default(false)
+  lost        Boolean   @default(false)
+  created_at  DateTime
+  updated_at  DateTime
+  pipelines   pipelines @relation(fields: [pipeline_id], references: [id], onDelete: Cascade)
+  tenants     tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, pipeline_id])
+}
+
+model deals {
+  id                String      @id
+  tenant_id         String
+  pipeline_id       String
+  stage_id          String
+  title             String
+  value             Int         @default(0)
+  currency          String      @default("INR")
+  owner_id          String?
+  lead_id           String?
+  account_id        String?
+  contact_id        String?
+  status            deal_status @default(OPEN)
+  expected_close_at DateTime?
+  closed_at         DateTime?
+  competitors       Json?
+  stakeholders      Json?
+  lost_reason       String?
+  win_probability   Int         @default(0)
+  health_score      Int         @default(0)
+  health_label      String?
+  created_at        DateTime
+  updated_at        DateTime
+  tenants           tenants     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, pipeline_id, stage_id])
+  @@index([tenant_id, status])
+  @@index([tenant_id, owner_id])
+}
+
+model activities {
+  id           String             @id
+  tenant_id    String
+  type         activity_type
+  direction    message_direction?
+  subject      String?
+  notes        String?
+  owner_id     String?
+  lead_id      String?
+  contact_id   String?
+  deal_id      String?
+  duration_sec Int?
+  // True when an AI agent (autonomous voice call, sales agent, etc.) logged this
+  // instead of a human. Lets the UI hide/badge bot activity so the team feed
+  // isn't muddled with automated entries.
+  ai_generated Boolean            @default(false)
+  created_at   DateTime
+  updated_at   DateTime
+  tenants      tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, contact_id])
+  @@index([tenant_id, deal_id])
+}
+
+model tasks {
+  id                    String      @id
+  tenant_id             String
+  title                 String
+  status                task_status @default(OPEN)
+  priority              priority    @default(MEDIUM)
+  due_at                DateTime?
+  completed_at          DateTime?
+  owner_id              String?
+  lead_id               String?
+  contact_id            String?
+  deal_id               String?
+  // When true, the task-reminders job emails the owner once a day (while OPEN)
+  // until it is completed. reminder_last_sent_at is the idempotency stamp that
+  // guarantees at most one reminder email per calendar day.
+  remind_daily          Boolean     @default(false)
+  reminder_last_sent_at DateTime?
+  // True when an AI agent created this task (e.g. the sales agent's follow-ups),
+  // so the UI can hide/badge it apart from human-created to-dos.
+  ai_generated          Boolean     @default(false)
+  created_at            DateTime
+  updated_at            DateTime
+  tenants               tenants     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, owner_id, status])
+}
+
+model conversations {
+  id              String              @id
+  tenant_id       String
+  channel         channel
+  lead_id         String?
+  contact_id      String?
+  subject         String?
+  status          conversation_status @default(OPEN)
+  unread_count    Int                 @default(0)
+  last_message_at DateTime?
+  last_preview    String?
+  created_at      DateTime
+  updated_at      DateTime
+  tenants         tenants             @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  messages        messages[]
+
+  @@index([tenant_id, channel])
+  @@index([tenant_id, last_message_at])
+}
+
+model messages {
+  id              String            @id
+  tenant_id       String
+  conversation_id String
+  channel         channel
+  direction       message_direction
+  body            String
+  lead_id         String?
+  contact_id      String?
+  sender_user_id  String?
+  sentiment       String?
+  sentiment_score Int?
+  simulated       Boolean           @default(true)
+  // The provider's message id (WhatsApp wamid / email message id), used to
+  // dedup inbound webhooks and to correlate delivery/read status back to the
+  // outbound message. Delivery status: sent/delivered/read/failed.
+  external_id     String?
+  status          String?
+  // The campaign this message was sent as part of (bulk send), so real delivery
+  // status (from Meta's status webhook) can be aggregated per campaign.
+  campaign_id     String?
+  at              DateTime
+  created_at      DateTime
+  updated_at      DateTime
+  conversations   conversations     @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  tenants         tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, conversation_id, at])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, contact_id])
+  @@index([tenant_id, external_id])
+  @@index([tenant_id, campaign_id])
+}
+
+model whatsapp_templates {
+  id         String               @id
+  tenant_id  String
+  key        String
+  body       String
+  category   wa_template_category @default(MARKETING)
+  status     wa_template_status   @default(APPROVED)
+  // Meta template metadata (populated by "Sync from Meta"): the exact language
+  // code, the number of body {{n}} variables, and Meta's template id.
+  language   String               @default("en_US")
+  variables  Int                  @default(0)
+  meta_id    String?
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, key])
+}
+
+model email_templates {
+  id         String   @id
+  tenant_id  String
+  name       String
+  subject    String
+  body       String
+  category   String?
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+model campaigns {
+  id              String          @id
+  tenant_id       String
+  name            String
+  channel         String
+  cost            Int             @default(0)
+  revenue         Int             @default(0)
+  leads_generated Int             @default(0)
+  status          campaign_status @default(ACTIVE)
+  // Execution (bulk send), audience + content + send results. Null/0 for the
+  // ROI-only campaigns that are never sent from the CRM.
+  audience_tag    String?
+  subject         String?
+  body            String?
+  // For WhatsApp campaigns: the ordered values for the template's {{1}}, {{2}}, …
+  // body variables. Each entry may contain the literal token {name}, replaced
+  // per-recipient with the lead's first name at send time. Null = legacy single
+  // {name} param.
+  template_params Json?
+  recipients      Int             @default(0)
+  sent            Int             @default(0)
+  sent_at         DateTime?
+  start_at        DateTime?
+  end_at          DateTime?
+  created_at      DateTime
+  updated_at      DateTime
+  tenants         tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+}
+
+model tickets {
+  id                String           @id
+  tenant_id         String
+  subject           String
+  body              String?
+  priority          ticket_priority  @default(MEDIUM)
+  status            ticket_status    @default(OPEN)
+  contact_id        String?
+  assignee_id       String?
+  channel           String?
+  lead_id           String?
+  sla_due_at        DateTime?
+  first_response_at DateTime?
+  resolved_at       DateTime?
+  resolved_by       String?
+  sentiment         String?
+  escalated         Boolean          @default(false)
+  csat              Int?
+  created_at        DateTime
+  updated_at        DateTime
+  ticket_replies    ticket_replies[]
+  tenants           tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+  @@index([tenant_id, assignee_id])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, sla_due_at])
+}
+
+model ticket_replies {
+  id             String   @id
+  tenant_id      String
+  ticket_id      String
+  author_user_id String?
+  is_ai          Boolean  @default(false)
+  body           String
+  channel        String?
+  created_at     DateTime
+  tenants        tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  tickets        tickets  @relation(fields: [ticket_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, ticket_id])
+}
+
+model sla_policies {
+  id                   String   @id
+  tenant_id            String
+  name                 String
+  first_response_hours Int
+  resolution_hours     Int
+  is_default           Boolean  @default(false)
+  created_at           DateTime
+  updated_at           DateTime
+  tenants              tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+model kb_articles {
+  id         String    @id
+  tenant_id  String
+  title      String
+  body       String
+  tags       Json?
+  status     kb_status @default(PUBLISHED)
+  views      Int       @default(0)
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, status])
+}
+
+model workflows {
+  id          String    @id
+  tenant_id   String
+  name        String
+  trigger     String
+  actions     Json
+  active      Boolean   @default(true)
+  run_count   Int       @default(0)
+  last_run_at DateTime?
+  created_at  DateTime
+  updated_at  DateTime
+  tenants     tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, trigger, active])
+}
+
+model automation_runs {
+  id            String   @id
+  tenant_id     String
+  workflow_id   String?
+  workflow_name String
+  event         String
+  log           Json
+  created_at    DateTime
+  tenants       tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at])
+}
+
+model voice_calls {
+  id                String            @id
+  tenant_id         String
+  lead_id           String?
+  contact_id        String?
+  agent_user_id     String?
+  direction         message_direction @default(OUTBOUND)
+  goal              String?
+  provider          String            @default("simulated")
+  duration_sec      Int               @default(0)
+  transcript        Json?
+  summary           String?
+  sentiment_label   String?
+  sentiment_score   Int?
+  outcome           String?
+  lead_score_delta  Int               @default(0)
+  action_items      Json?
+  completed_at      DateTime?
+  created_at        DateTime
+  updated_at        DateTime
+  call_error        String?
+  call_status       String?
+  from_number       String?
+  recording_url     String?
+  to_number         String?
+  twilio_call_sid   String?           @unique
+  cost_cents        Int?
+  external_call_id  String?           @unique
+  structured_data   Json?
+  engine_session_id String?
+  agenda_id         String?
+  // A pre-composed briefing block about the recipient (history, deal, notes…)
+  // woven into the agent's system prompt. Used when a caller, e.g. the sales
+  // agent, has richer context than the lead/contact row alone. `goal` above
+  // carries the call's objective the same way.
+  brief_context     String?
+  tenants           tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, agent_user_id])
+}
+
+model agent_runs {
+  id           String   @id
+  tenant_id    String
+  agent        String
+  triggered_by String?
+  summary      String?
+  actions      Json?
+  created_at   DateTime
+  tenants      tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, agent])
+  @@index([tenant_id, created_at])
+}
+
+// A single agent-drafted outreach message. Doubles as the human-in-the-loop
+// approval queue (status DRAFT until a user approves) AND the memory/suppression
+// ledger the sales agent reads to avoid re-messaging the same lead. A DRAFT is
+// never delivered; delivery happens only on approve, which flips it to SENT and
+// links the resulting messages.id.
+model agent_outreach {
+  id          String    @id
+  tenant_id   String
+  agent       String
+  run_id      String?
+  lead_id     String?
+  contact_id  String?
+  channel     channel
+  // DRAFT | APPROVED | SENT | REJECTED | FAILED | SKIPPED
+  status      String    @default("DRAFT")
+  subject     String?
+  body        String
+  // Short "why this lead / why now" shown to the reviewer (explainability).
+  reason      String?
+  // messages.id once the approved draft is delivered.
+  message_id  String?
+  created_by  String?
+  reviewed_by String?
+  approved_at DateTime?
+  sent_at     DateTime?
+  // Set when the lead replied after this outreach was sent, the outcome signal
+  // behind reply-rate metrics and the targeting feedback loop.
+  replied_at  DateTime?
+  created_at  DateTime
+  updated_at  DateTime
+  tenants     tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, agent, status])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, agent, created_at])
+}
+
+// Per-tenant, per-agent automation config (Phase 2). One row per (tenant, agent).
+// Defaults are deliberately safe: automation is OFF and auto_send is OFF, so
+// nothing runs automatically until a tenant opts in from the UI.
+model agent_settings {
+  id               String   @id
+  tenant_id        String
+  agent            String
+  enabled          Boolean  @default(false)
+  score_threshold  Int      @default(65)
+  // Preferred channel order, e.g. ["WHATSAPP","EMAIL"].
+  channels         Json?
+  // Freeform brand/tone hint fed to the composer.
+  tone             String?
+  // Sequence steps: [{ delayDays, angle }], the multi-touch cadence.
+  cadence          Json?
+  // { start, end, tz }, stored for forward-compat; not enforced yet.
+  working_hours    Json?
+  // Max drafts the automation may create per tenant per day (spam guard).
+  daily_cap        Int      @default(20)
+  // When true, approved-quality drafts are delivered immediately instead of
+  // waiting in the review queue. Default false = human-in-the-loop.
+  auto_send        Boolean  @default(false)
+  // When true, a final AI voice call is appended to the sequence (falling back
+  // to a human call task if the calling engine isn't configured/reachable).
+  escalate_to_call Boolean  @default(false)
+  created_at       DateTime
+  updated_at       DateTime
+  tenants          tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, agent])
+}
+
+// A lead progressing through an agent's multi-touch sequence (Phase 2). The
+// scheduled runner picks up ACTIVE enrollments whose next_run_at has passed,
+// drafts the next touch, and advances/completes. A reply flips it to REPLIED.
+model agent_enrollments {
+  id            String    @id
+  tenant_id     String
+  agent         String
+  lead_id       String
+  // ACTIVE | PAUSED | COMPLETED | REPLIED | STOPPED
+  status        String    @default("ACTIVE")
+  current_step  Int       @default(0)
+  next_run_at   DateTime?
+  last_touch_at DateTime?
+  enrolled_at   DateTime
+  completed_at  DateTime?
+  created_at    DateTime
+  updated_at    DateTime
+  tenants       tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, agent, status, next_run_at])
+  @@index([tenant_id, lead_id])
+}
+
+model invoices {
+  id         String         @id
+  tenant_id  String
+  number     String
+  deal_id    String?
+  account_id String?
+  contact_id String?
+  amount     Int
+  tax        Int            @default(0)
+  status     invoice_status @default(DRAFT)
+  gateway    String?
+  issued_at  DateTime?
+  due_at     DateTime?
+  paid_at    DateTime?
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  payments   payments[]
+
+  @@unique([tenant_id, number])
+  @@index([tenant_id, status])
+}
+
+model payments {
+  id                 String         @id
+  tenant_id          String
+  invoice_id         String
+  amount             Int
+  status             payment_status @default(SUCCESS)
+  gateway            String?
+  reference          String?
+  // Razorpay: the hosted payment-link URL (for the customer) and the captured
+  // payment id (needed to issue a refund). Null for manual/offline payments.
+  pay_url            String?
+  gateway_payment_id String?
+  at                 DateTime
+  created_at         DateTime
+  updated_at         DateTime
+  invoices           invoices       @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  tenants            tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, invoice_id])
+  @@index([status, gateway])
+}
+
+model meetings {
+  id                String         @id
+  tenant_id         String
+  title             String
+  lead_id           String?
+  contact_id        String?
+  owner_id          String?
+  start_at          DateTime
+  duration_min      Int            @default(30)
+  mode              meeting_mode   @default(ONLINE)
+  location          String?
+  status            meeting_status @default(SCHEDULED)
+  reminder_at       DateTime?
+  reminder_sent_at  DateTime?
+  booking_link_id   String?
+  // External calendar sync (e.g. Google Calendar). NULL => CRM-native only.
+  // external_event_id is the provider's event id, used to update/delete the
+  // mirrored event when the CRM meeting is cancelled/deleted.
+  external_provider String?
+  external_event_id String?
+  created_at        DateTime
+  updated_at        DateTime
+  tenants           tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, start_at])
+  @@index([tenant_id, owner_id])
+}
+
+// Per-user OAuth link to an external calendar (Google today). Scoped to a user
+// within a tenant; a meeting syncs to ITS OWNER's connection. Tokens are
+// AES-256-GCM encrypted at rest (utils/crypto). Purely additive, absence of a
+// row means CRM-native behavior (no external sync).
+model calendar_connections {
+  id                      String    @id
+  tenant_id               String
+  user_id                 String
+  provider                String    @default("GOOGLE")
+  // The connected account's email (shown in the UI; also the calendar id).
+  account_email           String?
+  access_token_encrypted  String?
+  refresh_token_encrypted String?
+  token_expires_at        DateTime?
+  // OAuth scopes actually granted (space-joined), for diagnostics.
+  scope                   String?
+  // Whether push/pull sync is active for this connection (user can pause).
+  sync_enabled            Boolean   @default(true)
+  status                  String    @default("CONNECTED")
+  last_error              String?
+  created_at              DateTime
+  updated_at              DateTime
+  tenants                 tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, user_id, provider])
+  @@index([tenant_id, user_id])
+}
+
+model booking_links {
+  id           String   @id
+  tenant_id    String
+  name         String
+  slug         String
+  duration_min Int      @default(30)
+  owner_id     String?
+  // Optionally target a specific lead/contact: the link is emailed to them and
+  // their booking links the meeting back to this record (instead of creating a
+  // new lead from whatever email is typed). NULL => generic public link.
+  lead_id      String?
+  contact_id   String?
+  bookings     Int      @default(0)
+  created_at   DateTime
+  updated_at   DateTime
+  tenants      tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, slug])
+}
+
+model integrations {
+  id           String    @id
+  tenant_id    String
+  key          String
+  name         String
+  category     String
+  connected    Boolean   @default(false)
+  connected_at DateTime?
+  credentials  Json?
+  created_at   DateTime
+  updated_at   DateTime
+  tenants      tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, key])
+}
+
+model webhooks {
+  id               String    @id
+  tenant_id        String
+  url              String
+  event            String
+  active           Boolean   @default(true)
+  deliveries       Int       @default(0)
+  secret           String
+  last_delivery_at DateTime?
+  created_at       DateTime
+  updated_at       DateTime
+  tenants          tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, event, active])
+}
+
+model api_keys {
+  id           String    @id
+  tenant_id    String
+  name         String
+  key_hash     String    @unique
+  key_prefix   String
+  created_by   String?
+  // Which connected app this key authenticates for. NULL = a legacy
+  // workspace-wide key; authenticateApiKey binds those to the tenant's auto
+  // created "Default" app on first use, so pre-existing keys keep working.
+  app_id       String?
+  // SECRET (crm_sk_, server side, full ingest surface) or PUBLISHABLE
+  // (crm_pk_, browser tracker, restricted to track/page/identify only).
+  scope        String    @default("SECRET")
+  last_used_at DateTime?
+  revoked_at   DateTime?
+  created_at   DateTime
+  updated_at   DateTime
+  tenants      tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([tenant_id, app_id])
+}
+
+model audit_logs {
+  id          String   @id
+  tenant_id   String
+  user_id     String?
+  action      String
+  entity_type String?
+  entity_id   String?
+  meta        Json?
+  created_at  DateTime
+  tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at])
+  @@index([tenant_id, action])
+}
+
+// Log of inbound lead-capture attempts (external platforms POSTing to the
+// public ingest endpoint). Doubles as the idempotency store: a non-null
+// external_id is unique per tenant, so provider redeliveries become no-ops.
+model lead_ingest_events {
+  id          String             @id
+  tenant_id   String
+  api_key_id  String?
+  source      String
+  external_id String?
+  status      lead_ingest_status
+  lead_id     String?
+  error       String?
+  payload     Json?
+  created_at  DateTime
+  tenants     tenants            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, external_id])
+  @@index([tenant_id, created_at])
+}
+
+// Log of inbound platform-activity events (external platforms POSTing to the
+// public /ingest/events endpoint). Kept SEPARATE from `activities` (the human
+// sales timeline) so product telemetry never pollutes it or the O(n) scoring
+// scan. `idempotency_key` is unique per tenant, so producer + payment-webhook
+// redeliveries are no-ops. Stores the producer's `occurred_at` (which
+// `activities` has no column for). `event` is a validated free string (not a DB
+// enum) so new event names need no migration. `status`: RECORDED | ORPHAN |
+// REJECTED (dedup short-circuits before insert, so no DEDUPED row).
+model activity_events {
+  id              String   @id
+  tenant_id       String
+  api_key_id      String?
+  lead_id         String?
+  event           String
+  title           String?
+  status          String
+  occurred_at     DateTime
+  idempotency_key String?
+  payload         Json?
+  error           String?
+  created_at      DateTime
+  // ---- Product-integration columns (all nullable, purely additive) ----
+  // Which connected app produced this event. NULL only for rows written before
+  // the product-integration platform existed.
+  app_id          String?
+  // The catalog item the event is about, resolved from payload.product.
+  product_id      String?
+  // Events follow the person, not the record: a lead that converts keeps its
+  // stream via contact_id so product history survives conversion.
+  contact_id      String?
+  // The tracker's anonymous visitor id. Stored as a real column (not dug out of
+  // `payload`) precisely because it is a LOOKUP key: when a visitor finally
+  // identifies themselves, every earlier anonymous event is back-filled onto
+  // them via this column, and a JSON scan would not survive real volume.
+  anonymous_id    String?
+  session_id      String?
+  page_url        String?
+  referrer        String?
+  // Revenue-carrying events (checkout, subscription) in minor units.
+  value_minor     Int?
+  currency        String?
+  tenants         tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, idempotency_key])
+  @@index([tenant_id, lead_id, occurred_at])
+  @@index([tenant_id, contact_id, occurred_at])
+  @@index([tenant_id, app_id, occurred_at])
+  // Drives the anonymous-to-known back-fill.
+  @@index([tenant_id, app_id, anonymous_id])
+  @@index([tenant_id, created_at])
+}
+
+model notifications {
+  id         String   @id
+  tenant_id  String
+  user_id    String
+  text       String
+  link       String?
+  read       Boolean  @default(false)
+  created_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, user_id, read])
+}
+
+model saved_views {
+  id         String   @id
+  tenant_id  String
+  user_id    String
+  resource   String
+  name       String
+  filters    Json
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, user_id, resource])
+}
+
+model reminders {
+  id         String          @id
+  tenant_id  String
+  user_id    String
+  title      String
+  note       String?
+  priority   priority        @default(MEDIUM)
+  status     reminder_status @default(OPEN)
+  due_date   String?
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, user_id, status])
+}
+
+model files {
+  id           String           @id
+  tenant_id    String
+  key          String
+  bucket       String
+  name         String
+  content_type String?
+  size_bytes   Int?
+  entity_type  String?
+  entity_id    String?
+  uploaded_by  String?
+  storage      storage_provider @default(LOCAL)
+  created_at   DateTime
+  tenants      tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, entity_type, entity_id])
+}
+
+model email_sending_domains {
+  id                    String                    @id
+  tenant_id             String
+  subdomain             String
+  mail_from_subdomain   String?
+  ses_configuration_set String?
+  status                email_domain_status       @default(PENDING)
+  dkim_status           String?
+  mail_from_status      String?
+  dns_records           Json?
+  verified_at           DateTime?
+  last_checked_at       DateTime?
+  created_at            DateTime
+  updated_at            DateTime
+  sender_identities     email_sender_identities[]
+  tenants               tenants                   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, subdomain])
+  @@index([status])
+}
+
+model email_sender_identities {
+  id                       String                @id
+  tenant_id                String
+  sending_domain_id        String
+  email_address            String
+  display_name             String?
+  reply_to                 String?
+  status                   email_identity_status @default(ACTIVE)
+  is_default_transactional Boolean               @default(false)
+  is_default_notification  Boolean               @default(false)
+  is_default_marketing     Boolean               @default(false)
+  created_at               DateTime
+  updated_at               DateTime
+  sending_domain           email_sending_domains @relation(fields: [sending_domain_id], references: [id], onDelete: Cascade)
+  tenants                  tenants               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email_address])
+  @@index([tenant_id, sending_domain_id])
+}
+
+model email_messages {
+  id                 String               @id
+  tenant_id          String
+  category           email_category       @default(NOTIFICATION)
+  sending_domain_id  String?
+  sender_identity_id String?
+  from_address       String
+  to_address         String
+  subject            String?
+  ses_message_id     String?              @unique
+  status             email_message_status @default(QUEUED)
+  idempotency_key    String?
+  delivered_at       DateTime?
+  bounced_at         DateTime?
+  complained_at      DateTime?
+  opened_at          DateTime?
+  clicked_at         DateTime?
+  error              String?
+  created_at         DateTime
+  updated_at         DateTime
+  tenants            tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, idempotency_key])
+  @@index([tenant_id, status])
+  @@index([tenant_id, created_at])
+}
+
+model email_suppressions {
+  id             String                   @id
+  tenant_id      String
+  email          String
+  reason         email_suppression_reason
+  category_scope email_category?
+  created_at     DateTime
+  updated_at     DateTime
+  tenants        tenants                  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, email, category_scope])
+  @@index([tenant_id, email])
+}
+
+model email_reputation_events {
+  id             String               @id
+  tenant_id      String
+  from_status    email_sending_status
+  to_status      email_sending_status
+  trigger        String
+  reason         String?
+  rates_snapshot Json?
+  created_at     DateTime
+  tenants        tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, created_at])
+}
+
+model email_domain_health_checks {
+  id                String   @id
+  tenant_id         String
+  sending_domain_id String
+  dkim_status       String?
+  mail_from_status  String?
+  spf_present       Boolean  @default(false)
+  dmarc_present     Boolean  @default(false)
+  failures          Json?
+  created_at        DateTime
+  tenants           tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, sending_domain_id, created_at])
+}
+
+model tenant_telephony {
+  id                   String           @id
+  tenant_id            String
+  provider             String           @default("TWILIO")
+  // Twilio: account SID. Exotel: account SID (the URL path segment).
+  account_sid          String?
+  // Twilio: auth token. Exotel: API token. Same AES-GCM envelope either way.
+  auth_token_encrypted String?
+  // Exotel API key (basic-auth username). Twilio rows leave this null.
+  api_key_encrypted    String?
+  // Exotel API subdomain: api.in.exotel.com (India) or api.exotel.com (SG).
+  subdomain            String?
+  // Twilio: from-number. Exotel: the main marketing ExoPhone (default CallerId).
+  from_number          String?
+  // Unguessable per-tenant token carried in the public Exotel webhook URLs.
+  // Exotel callbacks are unsigned, so this token IS the authentication.
+  webhook_token        String?          @unique
+  status               telephony_status @default(PENDING)
+  verified_at          DateTime?
+  last_error           String?
+  created_at           DateTime
+  updated_at           DateTime
+  tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+// ExoPhone pool: the tenant's main marketing number plus optional per-agent
+// dedicated numbers. Powers outbound CallerId selection (agents dial out from
+// "their" number, spreading volume and keeping one consistent number per
+// relationship) and inbound ring-the-owner-first routing.
+model telephony_numbers {
+  id               String   @id
+  tenant_id        String
+  phone            String
+  label            String?
+  kind             String   @default("MAIN") // MAIN | AGENT
+  assigned_user_id String?
+  active           Boolean  @default(true)
+  created_at       DateTime
+  updated_at       DateTime
+  tenants          tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, phone])
+  @@index([tenant_id])
+}
+
+// Tenant BYO payment gateway (Razorpay). Mirrors tenant_telephony: the key
+// secret is encrypted at rest; the key id is semi-public (used in checkout) so
+// it's stored as-is. Status PENDING until validated against Razorpay.
+model tenant_razorpay {
+  id                   String           @id
+  tenant_id            String
+  provider             String           @default("RAZORPAY")
+  key_id               String?
+  key_secret_encrypted String?
+  status               telephony_status @default(PENDING)
+  verified_at          DateTime?
+  last_error           String?
+  created_at           DateTime
+  updated_at           DateTime
+  tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+// Tenant BYO payment gateway (Stripe). Only a secret key is needed (encrypted
+// at rest). Status PENDING until validated against Stripe.
+model tenant_stripe {
+  id                   String           @id
+  tenant_id            String
+  provider             String           @default("STRIPE")
+  secret_key_encrypted String?
+  status               telephony_status @default(PENDING)
+  verified_at          DateTime?
+  last_error           String?
+  created_at           DateTime
+  updated_at           DateTime
+  tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+}
+
+// Tenant BYO WhatsApp (Meta Cloud API). Manual-credential model, mirroring
+// tenant_telephony: the access token + app secret are encrypted at rest. Status
+// PENDING until validated against Meta, then ACTIVE.
+model tenant_whatsapp {
+  id                         String           @id
+  tenant_id                  String
+  provider                   String           @default("META")
+  phone_number_id            String?
+  waba_id                    String?
+  access_token_encrypted     String?
+  app_secret_encrypted       String?
+  webhook_verify_token       String?
+  display_phone_number       String?
+  verified_name              String?
+  // Meta business (portfolio) id captured by Embedded Signup.
+  business_id                String?
+  // Cloud API 2FA registration PIN (encrypted). Reused verbatim on reconnect, // Meta locks the number for 7 days if a different PIN is submitted.
+  registration_pin_encrypted String?
+  // How this account was connected: EMBEDDED (Meta Embedded Signup) is the only
+  // supported path going forward. MANUAL rows may exist from legacy connects.
+  connect_method             String           @default("EMBEDDED")
+  status                     telephony_status @default(PENDING)
+  verified_at                DateTime?
+  last_error                 String?
+  created_at                 DateTime
+  updated_at                 DateTime
+  tenants                    tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([waba_id])
+}
+
+enum operator_role {
+  SUPERADMIN
+  OPERATOR
+}
+
+enum user_status {
+  ACTIVE
+  DISABLED
+  PENDING
+}
+
+enum tenant_status {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum entitlement_source {
+  PLAN
+  ADMIN
+}
+
+enum lead_status {
+  NEW
+  QUALIFIED
+  DISQUALIFIED
+  CONVERTED
+  ATTEMPTED
+  CONNECTED
+  NURTURE
+  NOT_INTERESTED
+}
+
+enum lead_grade {
+  HOT
+  WARM
+  COLD
+}
+
+enum lead_ingest_status {
+  CREATED
+  DEDUPED
+  REJECTED
+  SPAM
+}
+
+enum contact_lifecycle {
+  LEAD
+  PROSPECT
+  CUSTOMER
+}
+
+enum contract_status {
+  ACTIVE
+  INACTIVE
+  EXPIRED
+}
+
+enum deal_status {
+  OPEN
+  WON
+  LOST
+}
+
+enum activity_type {
+  CALL
+  MEETING
+  DEMO
+  NOTE
+  EMAIL
+  TASK
+}
+
+enum message_direction {
+  INBOUND
+  OUTBOUND
+}
+
+enum task_status {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+enum priority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum channel {
+  WHATSAPP
+  EMAIL
+  SMS
+  TELEGRAM
+  CHAT
+  FACEBOOK
+  INSTAGRAM
+  VOICE
+}
+
+enum conversation_status {
+  OPEN
+  CLOSED
+}
+
+enum wa_template_category {
+  MARKETING
+  ONBOARDING
+  TRANSACTIONAL
+}
+
+enum wa_template_status {
+  APPROVED
+  PENDING
+  REJECTED
+}
+
+enum campaign_status {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+
+enum ticket_priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ticket_status {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum kb_status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum invoice_status {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  REFUNDED
+}
+
+enum payment_status {
+  SUCCESS
+  FAILED
+  PENDING
+  REFUNDED
+}
+
+enum meeting_mode {
+  ONLINE
+  OFFLINE
+}
+
+enum meeting_status {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum reminder_status {
+  OPEN
+  DONE
+}
+
+enum storage_provider {
+  S3
+  LOCAL
+}
+
+enum email_domain_status {
+  PENDING
+  VERIFIED
+  FAILED
+  DISABLED
+}
+
+enum email_identity_status {
+  ACTIVE
+  ARCHIVED
+}
+
+enum email_category {
+  TRANSACTIONAL
+  NOTIFICATION
+  MARKETING
+}
+
+enum email_message_status {
+  QUEUED
+  SENT
+  DELIVERED
+  BOUNCED
+  COMPLAINED
+  REJECTED
+  FAILED
+  SUPPRESSED
+}
+
+enum email_suppression_reason {
+  HARD_BOUNCE
+  COMPLAINT
+  MANUAL_UNSUBSCRIBE
+  ADMIN_BLOCK
+  IMPORTED
+}
+
+enum email_sending_status {
+  ACTIVE
+  WARNING
+  THROTTLED
+  PAUSED
+}
+
+enum telephony_status {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+// ---------------------------------------------------------------------------
+// Platform billing (operator tier): the operator charging tenants for their plan.
+// Distinct from the tenant-scoped finance module (invoices/payments/tenant_*),
+// which is a tenant billing their own customers. See docs/platform-billing.md.
+// ---------------------------------------------------------------------------
+
+// One live subscription per tenant (history retained on plan change/cancel).
+// Payment is upfront: a tenant starts PENDING + tenants.status SUSPENDED until
+// the first successful charge flips it ACTIVE.
+model tenant_subscriptions {
+  id                      String                  @id
+  tenant_id               String
+  plan_key                String
+  gateway                 String
+  billing_interval        billing_interval        @default(MONTHLY)
+  // AUTO = gateway subscription auto-charges each cycle (mandate/saved card).
+  // MANUAL = no mandate; the tenant pays a one-time link each cycle to renew.
+  billing_mode            billing_mode            @default(AUTO)
+  status                  subscription_status     @default(PENDING)
+  gateway_customer_id     String?
+  gateway_subscription_id String?                 @unique
+  // Latest hosted pay/checkout URL while PENDING or awaiting a manual renewal;
+  // cleared once a payment activates the subscription.
+  checkout_url            String?
+  // Gateway id of that pending link/session (Razorpay payment_link id / Stripe
+  // checkout session id) so the poller can confirm payment without a webhook.
+  checkout_ref            String?
+  current_period_start    DateTime?
+  current_period_end      DateTime?
+  cancel_at_period_end    Boolean                 @default(false)
+  canceled_at             DateTime?
+  grace_until             DateTime?
+  amount                  Int
+  currency                String                  @default("INR")
+  created_at              DateTime
+  updated_at              DateTime
+  platform_transactions   platform_transactions[]
+  tenants                 tenants                 @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([status])
+  @@index([current_period_end])
+}
+
+// Operator<->tenant ledger: one row per charge / attempt / refund.
+model platform_transactions {
+  id                   String               @id
+  tenant_id            String
+  subscription_id      String
+  gateway              String
+  gateway_invoice_id   String?              @unique
+  gateway_payment_id   String?
+  amount               Int
+  currency             String               @default("INR")
+  status               platform_txn_status  @default(PENDING)
+  kind                 platform_txn_kind    @default(CYCLE)
+  period_start         DateTime?
+  period_end           DateTime?
+  hosted_invoice_url   String?
+  failure_reason       String?
+  occurred_at          DateTime
+  created_at           DateTime
+  updated_at           DateTime
+  tenant_subscriptions tenant_subscriptions @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
+  tenants              tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id])
+  @@index([subscription_id])
+  @@index([status])
+}
+
+// Maps an internal plan + interval to the external gateway plan/price id.
+// plan_key is a soft reference to plans.key (mirrors tenants.plan_key).
+model plan_gateway_refs {
+  id               String           @id
+  plan_key         String
+  gateway          String
+  billing_interval billing_interval @default(MONTHLY)
+  external_plan_id String
+  amount           Int
+  currency         String           @default("INR")
+  active           Boolean          @default(true)
+  created_at       DateTime
+  updated_at       DateTime
+
+  @@unique([plan_key, gateway, billing_interval])
+}
+
+// Idempotency + audit for inbound gateway webhooks (Razorpay/Stripe retry).
+model platform_webhook_events {
+  id           String   @id
+  gateway      String
+  event_id     String   @unique
+  event_type   String
+  status       String   @default("PROCESSED")
+  error        String?
+  processed_at DateTime
+  created_at   DateTime
+
+  @@index([gateway, event_type])
+}
+
+enum subscription_status {
+  PENDING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  PAUSED
+  GRANDFATHERED
+}
+
+enum billing_interval {
+  MONTHLY
+  ANNUAL
+}
+
+enum billing_mode {
+  AUTO
+  MANUAL
+}
+
+enum platform_txn_status {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum platform_txn_kind {
+  CYCLE
+  SETUP
+  PRORATION
+  REFUND
+}
+
+// =============================================================================
+// PRODUCT INTEGRATION PLATFORM
+// Lets ANY external software product integrate with the CRM: publish its
+// catalog, stream what a person does inside it, and receive CRM events back.
+// See docs/product-integration-plan.md. Every table is additive: a workspace
+// with no connected app behaves exactly as it did before these existed.
+// =============================================================================
+
+// The external system itself (Salesforce calls this a Connected App). One row
+// per product a workspace has wired up. API keys, catalog rows, event
+// definitions and engagement profiles all hang off this.
+model connected_apps {
+  id          String  @id
+  tenant_id   String
+  key         String // slug, e.g. "acme-cloud"
+  name        String
+  description String?
+  logo_url    String?
+  // Base URL used to build deep links back into the product from CRM records.
+  product_url String?
+  status      String  @default("ACTIVE") // ACTIVE | PAUSED | DISABLED
+  environment String  @default("LIVE") // LIVE | TEST (TEST never affects scoring)
+
+  // { catalog, events, identity, deeplink, outbound, actions } booleans.
+  capabilities Json?
+
+  // ---- Catalog sync ----
+  catalog_mode         String    @default("PUSH") // PUSH | PULL | MANUAL
+  catalog_pull_url     String?
+  last_catalog_sync_at DateTime?
+
+  // ---- CRM -> product (actions the agent can fire from a record) ----
+  actions_url     String?
+  // AES-256-GCM at rest via utils/crypto, same as calendar_connections tokens.
+  actions_secret  String?
+  // [{ key, label, description, params_schema, confirm }] declared by the product.
+  actions_catalog Json?
+
+  // ---- Browser tracker ----
+  // string[] origin allowlist enforced for PUBLISHABLE-scoped keys.
+  allowed_origins Json?
+
+  // ---- Health (surfaced on the integration console) ----
+  last_event_at DateTime?
+  health        String    @default("PENDING") // PENDING | OK | STALE | ERROR
+  last_error    String?
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, key])
+  @@index([tenant_id, status])
+}
+
+// The sellable catalog (Salesforce Product2). `source` decides authority:
+// SYNCED rows are owned by the external product and read-only in the CRM;
+// MANUAL rows are created by an admin for things the product does not expose.
+model products {
+  id          String  @id
+  tenant_id   String
+  app_id      String? // NULL = CRM-native product
+  external_id String? // the product's own id, the upsert key
+  sku         String?
+  name        String
+  description String? // markdown, rendered in the agent panel
+  category    String?
+  family      String?
+  url         String? // deep link to the live product page
+  media       Json? // { thumbnail, images[] }
+  attributes  Json? // free-form, product-defined (level, duration, seats, ...)
+  highlights  Json? // string[], the pitch bullets an agent reads out
+  status      String  @default("ACTIVE") // ACTIVE | DRAFT | ARCHIVED
+  source      String  @default("SYNCED") // SYNCED | MANUAL
+  sort_order  Int     @default(0)
+  total_sales Int     @default(0)
+
+  synced_at  DateTime?
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, app_id, external_id])
+  @@index([tenant_id, status])
+  @@index([tenant_id, category])
+  @@index([tenant_id, app_id])
+}
+
+// A price book entry (Salesforce PricebookEntry), flattened. Amounts are MINOR
+// units (paise/cents) because integrating products speak minor units. The
+// deal-line-item bridge converts once, explicitly. See the plan doc.
+model product_prices {
+  id               String  @id
+  tenant_id        String
+  product_id       String
+  price_book       String  @default("STANDARD")
+  currency         String  @default("INR")
+  amount_minor     Int
+  compare_at_minor Int? // strike-through / list price
+  billing_period   String  @default("ONE_TIME") // ONE_TIME | MONTHLY | QUARTERLY | YEARLY
+  is_default       Boolean @default(false)
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, product_id, price_book, currency, billing_period])
+  @@index([tenant_id, product_id])
+}
+
+// Offers and coupons unified behind a nullable `code`: an offer WITH a code is
+// a coupon. One table, one panel, one mental model for the agent.
+model product_offers {
+  id          String  @id
+  tenant_id   String
+  app_id      String?
+  product_id  String? // NULL = applies across products (see applies_to)
+  code        String? // NULL = a plain offer, non-null = a coupon
+  name        String
+  description String?
+  terms       String?
+
+  discount_type  String // PERCENT | FLAT
+  discount_value Int // percent 0-100, or minor units when FLAT
+  currency       String?
+  applies_to     Json? // { product_ids: [], categories: [] }
+
+  starts_at        DateTime?
+  ends_at          DateTime?
+  max_redemptions  Int?
+  redemptions_used Int       @default(0)
+  status           String    @default("ACTIVE") // ACTIVE | SCHEDULED | EXPIRED | DISABLED
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, app_id, code])
+  @@index([tenant_id, product_id, status])
+  @@index([tenant_id, status, ends_at])
+}
+
+// Per-app event registry (HubSpot's event definitions). An event name the CRM
+// has never seen is ACCEPTED and auto-registered here as NEEDS_REVIEW rather
+// than rejected, so a producer is never blocked. NEEDS_REVIEW definitions do
+// not contribute to intent scoring until an admin activates them.
+model app_event_definitions {
+  id          String  @id
+  tenant_id   String
+  app_id      String
+  name        String // "checkout.started"
+  label       String // "Started checkout"
+  description String?
+  category    String  @default("ACTION") // PAGE | ACTION | LIFECYCLE | COMMERCE | SUPPORT
+  icon        String?
+
+  // Scoring inputs. intent_weight is -100..100 and is summed with recency decay.
+  intent_weight  Int     @default(0)
+  is_high_intent Boolean @default(false)
+
+  // { key: { type, label, show_in_timeline } }, drives generic rendering.
+  property_schema Json?
+
+  review_status   String    @default("ACTIVE") // ACTIVE | NEEDS_REVIEW | IGNORED
+  auto_registered Boolean   @default(false)
+  event_count     Int       @default(0)
+  last_seen_at    DateTime?
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, app_id, name])
+  @@index([tenant_id, review_status])
+  @@index([tenant_id, app_id])
+}
+
+// The identity graph. Without this there is no way to attach pre-signup
+// browsing to the person who later hands over an email, which is the whole
+// point of "previous history of engagement".
+model app_identities {
+  id             String  @id
+  tenant_id      String
+  app_id         String
+  identity_type  String // EXTERNAL_USER_ID | EMAIL | PHONE | ANONYMOUS_ID
+  identity_value String
+  lead_id        String?
+  contact_id     String?
+
+  first_seen_at DateTime
+  last_seen_at  DateTime
+  created_at    DateTime
+  tenants       tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, app_id, identity_type, identity_value])
+  @@index([tenant_id, lead_id])
+  @@index([tenant_id, contact_id])
+}
+
+// One rollup row per (person, app). Replaces the LMS-shaped JSON bag that used
+// to live on leads.custom_fields. Product-specific counters live in `usage`,
+// NAMED BY THE PRODUCT and rendered generically from app_event_definitions, // that is how a new product is supported with zero CRM code change.
+model engagement_profiles {
+  id         String  @id
+  tenant_id  String
+  app_id     String
+  lead_id    String?
+  contact_id String?
+
+  lifecycle_stage String  @default("VISITOR") // VISITOR|SIGNED_UP|TRIAL|ACTIVE|PAYING|CHURNED
+  plan_name       String?
+  plan_status     String?
+  mrr_minor       Int?
+  currency        String?
+
+  first_seen_at DateTime?
+  last_seen_at  DateTime?
+  signup_at     DateTime?
+  trial_ends_at DateTime?
+
+  // Rolling 30-day windows, refreshed by the engagement-rollup sweep.
+  sessions_30d    Int @default(0)
+  events_30d      Int @default(0)
+  page_views_30d  Int @default(0)
+  active_days_30d Int @default(0)
+
+  intent_score   Int    @default(0) // 0-100
+  intent_band    String @default("COLD") // HOT | WARM | COLD
+  // [{ label, weight }], the plain-English "why", so an agent can interrogate
+  // the number instead of ignoring it.
+  intent_reasons Json?
+
+  checkout_abandoned_at DateTime?
+  abandoned_cart        Json? // { product_ids: [], value_minor, currency }
+  top_products          Json? // [{ product_id, views, last_at }]
+  usage                 Json? // product-defined counters
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@unique([tenant_id, app_id, lead_id])
+  @@unique([tenant_id, app_id, contact_id])
+  @@index([tenant_id, intent_band, last_seen_at])
+  @@index([tenant_id, app_id])
+}
+
+// Salesforce OpportunityLineItem. deals.value becomes DERIVED when a deal has
+// line items and falls back to the manually entered scalar when it does not,
+// so no existing pipeline behaviour changes.
+model deal_line_items {
+  id         String  @id
+  tenant_id  String
+  deal_id    String
+  product_id String? // NULL = ad-hoc line, not from the catalog
+  offer_id   String?
+  name       String
+  quantity   Int     @default(1)
+
+  unit_price_minor Int
+  discount_minor   Int    @default(0)
+  total_minor      Int
+  currency         String @default("INR")
+  sort_order       Int    @default(0)
+
+  created_at DateTime
+  updated_at DateTime
+  tenants    tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, deal_id])
+  @@index([tenant_id, product_id])
+}
+
+// Outbound delivery log. The `webhooks` subscription table already existed but
+// nothing ever dispatched; this is the log that makes delivery observable,
+// debuggable and replayable.
+model webhook_deliveries {
+  id            String  @id
+  tenant_id     String
+  webhook_id    String
+  event         String
+  payload       Json
+  status        String  @default("PENDING") // PENDING | SUCCEEDED | FAILED | EXHAUSTED
+  attempt       Int     @default(0)
+  response_code Int?
+  response_body String?
+  error         String?
+
+  next_retry_at DateTime?
+  delivered_at  DateTime?
+  created_at    DateTime
+  tenants       tenants   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@index([tenant_id, webhook_id, created_at])
+  @@index([status, next_retry_at])
+}

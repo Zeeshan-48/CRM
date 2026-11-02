@@ -1,0 +1,43 @@
+node_modules/
+dist/
+dist-scripts/
+coverage/
+.turbo/
+*.log
+.DS_Store
+
+# Environment: only the *.example files are ever committed
+.env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.*.example
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl
+crash.log
+
+# Local runtime artifacts
+.local-storage/
+apps/api/.local-storage/
+tmp/
+playwright-report/
+test-results/
+e2e/.report/
+e2e/.results/
+blob-report/
+
+# Local tool state (browser automation, editors)
+.gstack/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# TypeScript incremental state
+*.tsbuildinfo

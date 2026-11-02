@@ -1,0 +1,281 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Cool-slate canvas, white cards, crisp 1px borders. */
+    --background: 215 20% 97%;
+    --foreground: 220 14% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 14% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 14% 11%;
+
+    --secondary: 215 18% 93%;
+    --secondary-foreground: 220 14% 11%;
+
+    --muted: 215 18% 93%;
+    --muted-foreground: 220 6% 42%;
+
+    --accent: 215 18% 93%;
+    --accent-foreground: 220 14% 11%;
+
+    --destructive: 0 72% 44%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 16% 85%;
+    --input: 215 16% 80%;
+
+    --radius: 6px;
+
+    /* Tenant brand accent as an RGB triplet; the auth store rewrites this
+       at runtime from tenant.brand_color (contrast-adjusted per theme).
+       Default is the Open CRM magenta, hsl(322 70% 42%) = #b6207f. */
+    --brand: 182 32 127;
+    --brand-foreground: 255 255 255;
+
+    /* Semantic status colours (RGB triplets, light mode = ~600 weight). */
+    --success: 4 120 87; /* emerald-700: 4.5:1 or better as small text */
+    --warning: 180 83 9; /* amber-700: 4.5:1 or better as small text */
+    --info: 124 58 237; /* violet-600 */
+    --danger: 220 38 38; /* red-600 */
+    --neutral: 100 116 139; /* slate-500 */
+
+    /* Flat surfaces: no small elevation. Floating overlays keep a faint lift. */
+    --shadow-sm: 0 0 #0000;
+    --shadow: 0 0 #0000;
+    --shadow-md: 0 4px 12px -4px rgb(20 20 30 / 0.08);
+    --shadow-lg: 0 12px 32px -12px rgb(20 20 30 / 0.12);
+  }
+
+  .dark {
+      /* "Deep Sea Twilight" ramp: #0c1821 page -> #1b2a41 surfaces -> #324a5f
+         lines. Page background is the deep teal-navy; cards + sidebar lift one
+         step to navy; hovers/borders/inputs climb toward slate. */
+      --background: 200 28% 4%;
+      --foreground: 205 22% 92%;
+
+      --card: 206 26% 9%;
+      --card-foreground: 205 22% 92%;
+
+      --popover: 206 26% 9%;
+      --popover-foreground: 205 22% 92%;
+
+      --secondary: 206 22% 15%;
+      --secondary-foreground: 205 22% 92%;
+
+      --muted: 206 20% 14%;
+      --muted-foreground: 208 16% 63%;
+
+      --accent: 206 22% 16%;
+      --accent-foreground: 205 22% 92%;
+
+      --destructive: 0 62% 50%;
+      --destructive-foreground: 0 0% 100%;
+
+      --border: 205 18% 19%;
+      --input: 205 18% 23%;
+
+      /* Dark-mode accent: a lightened variant of the tenant brand. This is the
+         default (magenta, hsl(322 64% 68%)); the auth store overwrites --brand
+         inline with the tenant colour lightened for >= 4.5:1 on the dark
+         canvas. Dark ink reads on the lightened accent. */
+      --brand: 225 121 187;
+      --brand-foreground: 12 18 24;
+
+      --success: 52 211 153;
+      --warning: 251 191 36;
+      --info: 167 139 250;
+      --danger: 248 113 113;
+      --neutral: 148 163 184;
+
+      --shadow-sm: 0 0 #0000;
+      --shadow: 0 0 #0000;
+      --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+      --shadow-lg: 0 12px 36px -12px rgb(0 0 0 / 0.6);
+    }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans text-[15px];
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "cv01", "cv03", "ss01";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+  }
+
+  ::selection {
+    background-color: rgb(var(--brand) / 0.18);
+  }
+}
+
+@layer utilities {
+  /* One staggered fade-up reveal on page load. Apply .reveal per section and
+     stagger with inline animation-delay (e.g. style={{ animationDelay: "60ms" }}). */
+  .reveal {
+    animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  /* Kanban card entrance: plays when a card mounts into a column (initial load
+     and, crucially, when a ticket is dropped into a new column) for a smooth
+     "lands in place" feel. */
+  .kanban-card-in {
+    animation: card-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Minimal, opacity-only modal transition. Avoids the zoom + translate
+     conflict that made dialogs appear to fly in from a corner. */
+  .dialog-overlay[data-state="open"],
+  .dialog-content[data-state="open"] {
+    animation: dialog-fade-in 0.16s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  .dialog-overlay[data-state="closed"],
+  .dialog-content[data-state="closed"] {
+    animation: dialog-fade-out 0.12s cubic-bezier(0.4, 0, 0.2, 1) both;
+  }
+
+  @keyframes dialog-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes dialog-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* Result-dialog feedback: the ring pops in, then each stroke draws itself
+     along its own length (pathLength normalized to 1). Shared by the success
+     tick and the error cross. */
+  .result-pop {
+    animation: result-pop 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .result-draw {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: result-draw 0.42s cubic-bezier(0.65, 0, 0.35, 1) 0.18s forwards;
+  }
+
+  /* Second stroke of the error cross, drawn just after the first. */
+  .result-draw-late {
+    animation-delay: 0.36s;
+  }
+
+  @keyframes result-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    60% {
+      transform: scale(1.06);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes result-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal,
+    .dialog-overlay,
+    .dialog-content,
+    .result-pop {
+      animation: none;
+    }
+    .result-draw {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* Chat wallpaper for the WhatsApp conversation thread: the muted theme
+     canvas with a faint tiled doodle pattern. The doodle is a single
+     translucent SVG whose stroke colour flips between the two themes. */
+  .wa-wallpaper {
+    background-color: hsl(var(--muted) / 0.6);
+    background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200' fill='none' stroke='%23000000' stroke-opacity='0.045' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M18 24h30a5 5 0 0 1 5 5v14a5 5 0 0 1-5 5H33l-8 7v-7h-7a5 5 0 0 1-5-5V29a5 5 0 0 1 5-5z'/><path d='M150 30c-4-5-12-4-12 3 0 6 12 12 12 12s12-6 12-12c0-7-8-8-12-3z'/><circle cx='45' cy='120' r='12'/><circle cx='40' cy='117' r='0.8'/><circle cx='50' cy='117' r='0.8'/><path d='M39 124c3 3.5 8 3.5 11 0'/><path d='M120 108c-3 11 8 22 19 19l3-6-7-4-4 3c-4-1-8-5-9-9l3-4-5-7z'/><path d='M170 140l3 6.5 7 1-5 5 1.2 7-6.2-3.4-6.2 3.4 1.2-7-5-5 7-1z'/><path d='M22 160h11l3-4h8l3 4h6v19H22z'/><circle cx='38' cy='171' r='5.5'/><path d='M96 40l14 14M110 40l-14 14'/><path d='M150 175a10 10 0 1 0 0.01 0'/><path d='M150 168v7l4 3'/></svg>");
+    background-size: 300px 300px;
+  }
+
+  .dark .wa-wallpaper {
+    background-color: hsl(var(--background));
+    background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 200 200' fill='none' stroke='%23ffffff' stroke-opacity='0.05' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M18 24h30a5 5 0 0 1 5 5v14a5 5 0 0 1-5 5H33l-8 7v-7h-7a5 5 0 0 1-5-5V29a5 5 0 0 1 5-5z'/><path d='M150 30c-4-5-12-4-12 3 0 6 12 12 12 12s12-6 12-12c0-7-8-8-12-3z'/><circle cx='45' cy='120' r='12'/><circle cx='40' cy='117' r='0.8'/><circle cx='50' cy='117' r='0.8'/><path d='M39 124c3 3.5 8 3.5 11 0'/><path d='M120 108c-3 11 8 22 19 19l3-6-7-4-4 3c-4-1-8-5-9-9l3-4-5-7z'/><path d='M170 140l3 6.5 7 1-5 5 1.2 7-6.2-3.4-6.2 3.4 1.2-7-5-5 7-1z'/><path d='M22 160h11l3-4h8l3 4h6v19H22z'/><circle cx='38' cy='171' r='5.5'/><path d='M96 40l14 14M110 40l-14 14'/><path d='M150 175a10 10 0 1 0 0.01 0'/><path d='M150 168v7l4 3'/></svg>");
+  }
+}
+
+/* Quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}

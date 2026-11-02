@@ -1,0 +1,25 @@
+{
+  "name": "@open-crm/sdk",
+  "version": "0.1.0",
+  "description": "Server-side SDK for connecting a product to Euron Open CRM: leads, identity, behavioural events and catalog sync.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "crm",
+    "sdk",
+    "integration",
+    "events"
+  ],
+  "license": "MIT"
+}

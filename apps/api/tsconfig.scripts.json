@@ -1,0 +1,18 @@
+{
+  // Type-checks the one-off scripts (seed, backfills, generators), which the main
+  // tsconfig deliberately leaves out of `include` because they must not be emitted
+  // into dist/. They still run under tsx, which strips types WITHOUT checking them,
+  // so without this file nothing ever verified them, and two seed bugs shipped
+  // because of it: `top_products` written without `name` (rendered "Untitled") and
+  // `intent_reasons` written as bare strings instead of { label, weight, count }
+  // (blanked the intent rows and warned about a missing React key).
+  //
+  // `noEmit` so this is purely a check; `pnpm type-check` runs it after src.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*", "src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
