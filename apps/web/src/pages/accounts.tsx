@@ -135,17 +135,20 @@ export default function AccountsPage() {
   });
   const detailQuery = useQuery({
     queryKey: ["account", activeId],
-    queryFn: () => getAccount(activeId as string),
-    enabled: !!activeId,
+    queryFn: () => {
+      if (!activeId) throw new Error("No active account selected");
+      return getAccount(activeId);
+    },
+    enabled: Boolean(activeId),
   });
 
   const createMutation = useMutation({
     mutationFn: () =>
       createAccount({
         name: accountForm.name.trim(),
-        industry: accountForm.industry || undefined,
-        size: accountForm.size || undefined,
-        website: accountForm.website || undefined,
+        industry: accountForm.industry.trim() || undefined,
+        size: accountForm.size.trim() || undefined,
+        website: accountForm.website.trim() || undefined,
       }),
     onSuccess: (account) => {
       toast.success(`Account "${account.name}" created`);
@@ -165,8 +168,10 @@ export default function AccountsPage() {
   });
 
   const assignMutation = useMutation({
-    mutationFn: () =>
-      updateContact(assignContactId, { account_id: activeId as string }),
+    mutationFn: () => {
+      if (!activeId) throw new Error("No active account selected");
+      return updateContact(assignContactId, { account_id: activeId });
+    },
     onSuccess: (contact) => {
       toast.success(`${contact.name} assigned to this account`);
       setAssignOpen(false);
@@ -185,13 +190,15 @@ export default function AccountsPage() {
   };
 
   const updateAccountMutation = useMutation({
-    mutationFn: () =>
-      updateAccount(activeId as string, {
+    mutationFn: () => {
+      if (!activeId) throw new Error("No active account selected");
+      return updateAccount(activeId, {
         name: editForm.name.trim(),
-        industry: editForm.industry,
-        size: editForm.size,
-        website: editForm.website,
-      }),
+        industry: editForm.industry.trim() || undefined,
+        size: editForm.size.trim() || undefined,
+        website: editForm.website.trim() || undefined,
+      });
+    },
     onSuccess: (account) => {
       toast.success(`Account "${account.name}" updated`);
       setEditOpen(false);
@@ -201,7 +208,10 @@ export default function AccountsPage() {
   });
 
   const deleteAccountMutation = useMutation({
-    mutationFn: () => deleteAccount(activeId as string),
+    mutationFn: () => {
+      if (!activeId) throw new Error("No active account selected");
+      return deleteAccount(activeId);
+    },
     onSuccess: () => {
       toast.success("Account deleted");
       setActiveId(null);
@@ -212,6 +222,7 @@ export default function AccountsPage() {
 
   const contractMutation = useMutation({
     mutationFn: () => {
+      if (!activeId) throw new Error("No active account selected");
       const body = {
         title: contractForm.title.trim(),
         value: Number(contractForm.value) || 0,
@@ -220,8 +231,8 @@ export default function AccountsPage() {
         end_at: contractForm.end_at || undefined,
       };
       return editingContractId
-        ? updateContract(activeId as string, editingContractId, body)
-        : addContract(activeId as string, body);
+        ? updateContract(activeId, editingContractId, body)
+        : addContract(activeId, body);
     },
     onSuccess: (contract) => {
       toast.success(
@@ -242,8 +253,10 @@ export default function AccountsPage() {
   });
 
   const deleteContractMutation = useMutation({
-    mutationFn: (contractId: string) =>
-      deleteContract(activeId as string, contractId),
+    mutationFn: (contractId: string) => {
+      if (!activeId) throw new Error("No active account selected");
+      return deleteContract(activeId, contractId);
+    },
     onSuccess: () => {
       toast.success("Contract deleted");
       invalidateAccount();
@@ -252,13 +265,15 @@ export default function AccountsPage() {
   });
 
   const invoiceMutation = useMutation({
-    mutationFn: () =>
-      createInvoice({
+    mutationFn: () => {
+      if (!activeId) throw new Error("No active account selected");
+      return createInvoice({
         amount: Number(invoiceForm.amount),
         tax: invoiceForm.tax.trim() ? Number(invoiceForm.tax) : undefined,
-        accountId: activeId as string,
+        accountId: activeId,
         dueAt: invoiceForm.dueAt || undefined,
-      }),
+      });
+    },
     onSuccess: (invoice) => {
       toast.success(`Invoice ${invoice.number} created`);
       setInvoiceOpen(false);
@@ -326,7 +341,8 @@ export default function AccountsPage() {
 
   const accounts = accountsQuery.data ?? [];
   const detail = detailQuery.data;
-  const showEmpty = !accountsQuery.isLoading && accounts.length === 0;
+  const showEmpty =
+    !accountsQuery.isLoading && !accountsQuery.isError && accounts.length === 0;
 
   // Contacts not already linked to the open account.
   const linkedContactIds = new Set(detail?.contacts.map((c) => c.id) ?? []);
@@ -348,7 +364,13 @@ export default function AccountsPage() {
       />
 
       {/* Card grid */}
-      {showEmpty ? (
+      {accountsQuery.isError ? (
+        <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-6 text-center text-sm text-destructive">
+          {accountsQuery.error instanceof Error
+            ? accountsQuery.error.message
+            : "Failed to load accounts. Please try refreshing."}
+        </div>
+      ) : showEmpty ? (
         <EmptyState
           icon={Building2}
           title="No accounts yet"
@@ -422,11 +444,17 @@ export default function AccountsPage() {
         }}
       >
         <SheetContent className="w-full overflow-y-auto p-5 sm:max-w-2xl">
-          {detailQuery.isLoading || !detail ? (
+          {detailQuery.isLoading ? (
             <div className="space-y-4 pt-6">
               <Skeleton className="h-8 w-64" />
               <Skeleton className="h-40 w-full" />
               <Skeleton className="h-40 w-full" />
+            </div>
+          ) : detailQuery.isError || !detail ? (
+            <div className="p-6 text-center text-sm text-destructive">
+              {detailQuery.error instanceof Error
+                ? detailQuery.error.message
+                : "Failed to load account details."}
             </div>
           ) : (
             <>
@@ -673,7 +701,8 @@ export default function AccountsPage() {
                             <Badge
                               className={cn(
                                 "",
-                                DEAL_STATUS_STYLES[deal.status],
+                                DEAL_STATUS_STYLES[deal.status] ??
+                                  "text-muted-foreground",
                               )}
                             >
                               {deal.status}
@@ -865,7 +894,7 @@ export default function AccountsPage() {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label>Status</Label>
+                <Label htmlFor="ct-status">Status</Label>
                 <Select
                   value={contractForm.status}
                   onValueChange={(v) =>
@@ -875,7 +904,7 @@ export default function AccountsPage() {
                     })
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="ct-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

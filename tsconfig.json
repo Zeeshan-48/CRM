@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./apps/web" },
+    { "path": "./apps/console" },
+    { "path": "./apps/api" },
+    { "path": "./packages/sdk" }
+  ]
+}
+
