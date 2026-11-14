@@ -18,6 +18,39 @@ export interface FinanceSummary {
 
 export type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "OVERDUE" | "REFUNDED";
 
+export interface InvoiceLineItem {
+  id?: string;
+  description: string;
+  subtitle?: string;
+  hsn_sac: string;
+  qty: number;
+  unit: string;
+  rate: number;
+  amount: number;
+}
+
+export interface InvoiceDetails {
+  client_name?: string;
+  client_address?: string;
+  client_phone?: string;
+  client_email?: string;
+  client_gstin?: string;
+  place_of_supply?: string;
+  project_type?: string;
+  project_name?: string;
+  project_value?: number;
+  billing_period?: string;
+  payment_terms?: string;
+  reverse_charge?: string;
+  items?: InvoiceLineItem[];
+  tax_type?: "IGST" | "CGST_SGST";
+  tax_rate?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  amount_in_words?: string;
+}
+
 export interface Invoice {
   id: string;
   tenant_id: string;
@@ -37,6 +70,7 @@ export interface Invoice {
   issued_at: string | null;
   due_at: string | null;
   paid_at: string | null;
+  details?: InvoiceDetails | null;
   created_at: string;
   updated_at: string;
 }
@@ -88,9 +122,13 @@ export interface PaymentLinkResult {
 export interface CreateInvoiceInput {
   amount: number;
   tax?: number;
+  number?: string;
   accountId?: string;
   contactId?: string;
+  dealId?: string;
   dueAt?: string;
+  gateway?: string;
+  details?: InvoiceDetails;
 }
 
 export interface UpdateInvoiceInput {
@@ -101,6 +139,7 @@ export interface UpdateInvoiceInput {
   dealId?: string | null;
   dueAt?: string | null;
   gateway?: string;
+  details?: InvoiceDetails;
 }
 
 export interface InvoiceActionResult {
@@ -179,3 +218,41 @@ export const getGatewayDefault = () =>
   apiGet<{ gateway: GatewayName }>("/finance/gateway-default");
 export const setGatewayDefault = (gateway: GatewayName) =>
   apiPut<{ gateway: GatewayName }>("/finance/gateway-default", { gateway });
+
+// ---- Tenant Billing Profile ----
+export interface TenantBillingProfile {
+  id: string;
+  tenant_id: string;
+  legal_name: string;
+  brand_name?: string | null;
+  gstin?: string | null;
+  cin?: string | null;
+  pan?: string | null;
+  is_gst_registered: boolean;
+  address: string;
+  city: string;
+  state: string;
+  state_code: string;
+  pincode: string;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  ifsc: string;
+  upi_id?: string | null;
+  invoice_prefix: string;
+  next_sequence: number;
+  signatory_name: string;
+  signatory_designation: string;
+  signature_url?: string | null;
+  logo_url?: string | null;
+  jurisdiction_city?: string | null;
+  notes?: string | null;
+  is_verified: boolean;
+  verified_at?: string | null;
+}
+
+export const getMyBillingProfile = () =>
+  apiGet<TenantBillingProfile | null>("/finance/billing-profile");

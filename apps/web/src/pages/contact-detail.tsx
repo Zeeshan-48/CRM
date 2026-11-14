@@ -29,7 +29,12 @@ import {
   type ContactLifecycle,
   type TimelineItem,
 } from "@/lib/api/contacts";
-import type { Deal } from "@/lib/api/deals";
+import {
+  listPipelines,
+  moveDeal,
+  loseDeal,
+  type Deal,
+} from "@/lib/api/deals";
 import { formatDate, formatDateTime, formatINR, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { LogActivityCard } from "@/components/activities/LogActivityCard";
@@ -106,8 +111,41 @@ function pickPrimaryDeal(deals: Deal[]): Deal | null {
 
 /** Deal-half funnel stepper on the contact, mirrors the lead's journey bar so
  *  the pipeline position is visible end-to-end. Shows the primary deal. */
-function ContactDealJourney({ deals }: { deals: Deal[] }) {
+function ContactDealJourney({
+  deals,
+  contactId,
+}: {
+  deals: Deal[];
+  contactId: string;
+}) {
   const deal = pickPrimaryDeal(deals);
+  const queryClient = useQueryClient();
+
+  const pipelinesQuery = useQuery({
+    queryKey: ["pipelines"],
+    queryFn: listPipelines,
+  });
+
+  const moveMutation = useMutation({
+    mutationFn: ({ dealId, stageId }: { dealId: string; stageId: string }) =>
+      moveDeal(dealId, stageId),
+    onSuccess: (updated) => {
+      toast.success(`Deal moved to ${updated.stage_name || "new stage"}`);
+      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const lostMutation = useMutation({
+    mutationFn: (dealId: string) => loseDeal(dealId),
+    onSuccess: () => {
+      toast.success("Deal marked as lost");
+      queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
 
   if (!deal) {
     return (
@@ -123,18 +161,42 @@ function ContactDealJourney({ deals }: { deals: Deal[] }) {
   }
 
   const lost = deal.status === "LOST" || deal.stage_name === "Lost";
+  const pipeline =
+    pipelinesQuery.data?.find((p) => p.id === deal.pipeline_id) ||
+    pipelinesQuery.data?.find((p) => p.is_default) ||
+    pipelinesQuery.data?.[0];
+
+  const pipelineStages = pipeline?.stages
+    ? [...pipeline.stages].sort((a, b) => a.sort_order - b.sort_order)
+    : [];
+
+  const nonLostStages = pipelineStages.filter((s) => !s.lost);
+
+  const displaySteps =
+    nonLostStages.length > 0
+      ? nonLostStages.map((s) => ({ id: s.id, name: s.name }))
+      : DEAL_JOURNEY.map((name) => ({ id: name, name }));
+
   const activeIdx = lost
     ? -1
-    : DEAL_JOURNEY.indexOf(deal.stage_name as (typeof DEAL_JOURNEY)[number]);
+    : displaySteps.findIndex(
+        (s) => s.name.toLowerCase() === (deal.stage_name || "").toLowerCase()
+      );
   const others = deals.length - 1;
+  const isPending = moveMutation.isPending || lostMutation.isPending;
 
   return (
     <div className="rounded-xl border bg-card p-4 sm:px-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Deal journey
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Deal journey
+            </p>
+            <span className="hidden text-xs text-muted-foreground/60 sm:inline">
+              &bull; Click any stage to advance
+            </span>
+          </div>
           <p className="mt-0.5 truncate text-sm font-medium">
             {deal.title}
             <span className="ml-2 font-normal tabular-nums text-muted-foreground">
@@ -142,46 +204,91 @@ function ContactDealJourney({ deals }: { deals: Deal[] }) {
             </span>
           </p>
         </div>
-        {lost ? (
-          <Badge className="text-danger">Lost</Badge>
-        ) : deal.status === "WON" ? (
-          <Badge className="text-success">Won</Badge>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {lost ? (
+            <Badge className="text-danger">Lost</Badge>
+          ) : deal.status === "WON" ? (
+            <Badge className="text-success">Won</Badge>
+          ) : null}
+          {pipelineStages.length > 0 ? (
+            <Select
+              value={deal.status === "LOST" ? "LOST" : deal.stage_id || ""}
+              onValueChange={(val) => {
+                if (val === "LOST") {
+                  lostMutation.mutate(deal.id);
+                } else {
+                  moveMutation.mutate({ dealId: deal.id, stageId: val });
+                }
+              }}
+              disabled={isPending}
+            >
+              <SelectTrigger className="h-7 w-[160px] gap-1 border-dashed px-2 text-xs">
+                <SelectValue placeholder="Change stage" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {pipelineStages.map((s) => (
+                  <SelectItem key={s.id} value={s.lost ? "LOST" : s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </div>
       </div>
 
-      <ol className="mt-3 flex items-center overflow-x-auto pb-1">
-        {DEAL_JOURNEY.map((step, i) => {
+      <ol className="mt-4 flex items-center overflow-x-auto py-2 px-1">
+        {displaySteps.map((step, i) => {
           const done = activeIdx >= 0 && i < activeIdx;
           const current = i === activeIdx;
           return (
-            <React.Fragment key={step}>
-              <li className="flex shrink-0 flex-col items-center gap-1.5">
-                <span
+            <React.Fragment key={step.id}>
+              <li className="flex shrink-0 flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetStage = pipelineStages.find(
+                      (s) => s.name.toLowerCase() === step.name.toLowerCase()
+                    );
+                    if (targetStage) {
+                      moveMutation.mutate({ dealId: deal.id, stageId: targetStage.id });
+                    }
+                  }}
+                  disabled={isPending || current}
                   className={cn(
-                    "flex size-6 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors",
-                    current
-                      ? "border-brand bg-brand text-brand-foreground"
-                      : done
-                        ? "border-success bg-success text-white"
-                        : "border-border bg-muted text-muted-foreground"
+                    "group flex flex-col items-center focus:outline-none disabled:pointer-events-none",
+                    current ? "cursor-default" : "cursor-pointer"
                   )}
                 >
-                  {done ? <Check className="size-3.5" /> : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    "whitespace-nowrap text-[11px]",
-                    current ? "font-semibold text-foreground" : "text-muted-foreground"
-                  )}
-                >
-                  {step}
-                </span>
+                  <span
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-all shadow-sm",
+                      current
+                        ? "border-brand bg-brand text-brand-foreground ring-4 ring-brand/20 shadow-sm"
+                        : done
+                          ? "border-emerald-600 bg-emerald-600 text-white"
+                          : "border-border bg-muted/60 text-muted-foreground group-hover:border-brand/70 group-hover:bg-brand/10 group-hover:text-brand group-hover:ring-4 group-hover:ring-brand/15"
+                    )}
+                  >
+                    {done ? <Check className="size-3.5 stroke-[2.5]" /> : i + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-1.5 max-w-[85px] text-center text-[11px] leading-tight transition-colors sm:max-w-[110px]",
+                      current
+                        ? "font-semibold text-foreground"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  >
+                    {step.name}
+                  </span>
+                </button>
               </li>
-              {i < DEAL_JOURNEY.length - 1 ? (
-                <span
+              {i < displaySteps.length - 1 ? (
+                <div
                   className={cn(
-                    "mx-1.5 mb-5 h-px min-w-4 flex-1",
-                    activeIdx >= 0 && i < activeIdx ? "bg-success" : "bg-border"
+                    "mx-2 mb-[22px] h-[2px] min-w-6 flex-1 transition-colors rounded-full",
+                    activeIdx >= 0 && i < activeIdx ? "bg-emerald-600" : "bg-border"
                   )}
                 />
               ) : null}
@@ -192,7 +299,7 @@ function ContactDealJourney({ deals }: { deals: Deal[] }) {
 
       <p className="mt-3 text-[11px] text-muted-foreground">
         {lost
-          ? "This deal was lost."
+          ? "This deal was lost. Click any stage above to reopen the deal."
           : deal.status === "WON"
             ? "Deal won, contact is now a customer."
             : deal.stage_name
@@ -508,7 +615,7 @@ export default function ContactDetailPage() {
 
       {/* Deal journey (funnel position, the deal half continues here) */}
       <div className="reveal" style={{ animationDelay: "50ms" }}>
-        <ContactDealJourney deals={contact.deals} />
+        <ContactDealJourney deals={contact.deals} contactId={contact.id} />
       </div>
 
       <div className="reveal" style={{ animationDelay: "60ms" }}>

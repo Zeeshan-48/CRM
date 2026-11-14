@@ -33,10 +33,13 @@ const asDate = (value: unknown, field: string): Date | null => {
 class AccountsService {
   async list(tenantId: string) {
     const rows = await accountsRepository.listWithStats(tenantId);
-    return rows.map(({ contactsCount, openValue, ...account }) => ({
+    return rows.map(({ contactsCount, openValue, hasOverdue, hasAmcDue, contractsCount, ...account }) => ({
       ...account,
       contactsCount: Number(contactsCount ?? 0),
       openValue: Number(openValue ?? 0),
+      hasOverdue: Boolean(hasOverdue),
+      hasAmcDue: Boolean(hasAmcDue),
+      contractsCount: Number(contractsCount ?? 0),
     }));
   }
 
@@ -52,11 +55,19 @@ class AccountsService {
     actorId: string,
     body: {
       name?: string;
+      project_name?: string;
       industry?: string;
       size?: string;
       website?: string;
       owner_id?: string;
       departments?: unknown;
+      address?: string;
+      city?: string;
+      state?: string;
+      pincode?: string;
+      gstin?: string;
+      phone?: string;
+      email?: string;
     }
   ): Promise<AccountRow> {
     if (!body.name) throw new BadRequestError("name is required");
@@ -64,11 +75,19 @@ class AccountsService {
     const account = await accountsRepository.create({
       tenant_id: tenantId,
       name: body.name,
+      project_name: body.project_name,
       industry: body.industry,
       size: body.size,
       website: body.website,
       owner_id: body.owner_id ?? actorId,
       departments: parseStringArray(body.departments),
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      pincode: body.pincode,
+      gstin: body.gstin,
+      phone: body.phone,
+      email: body.email,
     });
 
     engineService.audit(tenantId, actorId, "account.created", "account", account.id, {});
@@ -83,6 +102,10 @@ class AccountsService {
       title?: string;
       value?: unknown;
       status?: string;
+      billing_type?: string;
+      recurring_interval?: string;
+      recurring_value?: unknown;
+      milestones?: unknown;
       start_at?: unknown;
       end_at?: unknown;
     }
@@ -91,12 +114,21 @@ class AccountsService {
     if (!account) throw new NotFoundError("Account not found");
     if (!body.title) throw new BadRequestError("title required");
 
+    const billingType = body.billing_type === "RECURRING" || body.billing_type === "HYBRID" ? body.billing_type : "ONE_TIME";
+    const recurringInterval = body.recurring_interval === "MONTHLY" ? "MONTHLY" : "ANNUAL";
+    const recurringValue = Math.round(Number(body.recurring_value)) || 0;
+    const milestones = Array.isArray(body.milestones) ? body.milestones : [];
+
     const contract = await accountsRepository.addContract({
       tenant_id: tenantId,
       account_id: accountId,
       title: body.title,
       value: Math.round(Number(body.value)) || 0,
       status: asContractStatus(body.status),
+      billing_type: billingType,
+      recurring_interval: recurringInterval,
+      recurring_value: recurringValue,
+      milestones,
       start_at: asDate(body.start_at, "start_at"),
       end_at: asDate(body.end_at, "end_at"),
     });
@@ -114,11 +146,19 @@ class AccountsService {
     accountId: string,
     body: {
       name?: string;
+      project_name?: string;
       industry?: string;
       size?: string;
       website?: string;
       owner_id?: string | null;
       departments?: unknown;
+      address?: string | null;
+      city?: string | null;
+      state?: string | null;
+      pincode?: string | null;
+      gstin?: string | null;
+      phone?: string | null;
+      email?: string | null;
     }
   ): Promise<AccountRow> {
     const account = await accountsRepository.findById(accountId, tenantId);
@@ -129,11 +169,19 @@ class AccountsService {
 
     const updated = await accountsRepository.update(accountId, tenantId, {
       name: body.name !== undefined ? String(body.name).trim() : undefined,
+      project_name: body.project_name !== undefined ? body.project_name : undefined,
       industry: body.industry,
       size: body.size,
       website: body.website,
       owner_id: body.owner_id,
       departments: body.departments !== undefined ? parseStringArray(body.departments) : undefined,
+      address: body.address,
+      city: body.city,
+      state: body.state,
+      pincode: body.pincode,
+      gstin: body.gstin,
+      phone: body.phone,
+      email: body.email,
     });
     if (!updated) throw new NotFoundError("Account not found");
 
@@ -159,6 +207,10 @@ class AccountsService {
       title?: string;
       value?: unknown;
       status?: string;
+      billing_type?: string;
+      recurring_interval?: string;
+      recurring_value?: unknown;
+      milestones?: unknown;
       start_at?: unknown;
       end_at?: unknown;
     }
@@ -173,6 +225,10 @@ class AccountsService {
       title: body.title !== undefined ? String(body.title).trim() : undefined,
       value: body.value !== undefined ? Math.round(Number(body.value)) || 0 : undefined,
       status: asContractStatus(body.status),
+      billing_type: body.billing_type !== undefined ? body.billing_type : undefined,
+      recurring_interval: body.recurring_interval !== undefined ? body.recurring_interval : undefined,
+      recurring_value: body.recurring_value !== undefined ? Math.round(Number(body.recurring_value)) || 0 : undefined,
+      milestones: body.milestones !== undefined ? (Array.isArray(body.milestones) ? body.milestones : []) : undefined,
       start_at: body.start_at !== undefined ? asDate(body.start_at, "start_at") : undefined,
       end_at: body.end_at !== undefined ? asDate(body.end_at, "end_at") : undefined,
     });

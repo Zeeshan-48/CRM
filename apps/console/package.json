@@ -1,8 +1,8 @@
 {
   "name": "@open-crm/console",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Open CRM operator console: onboard tenants, sell plans, bill and audit",
+  "description": "Bn Orbit operator console: onboard tenants, sell plans, bill and audit",
   "type": "module",
   "engines": {
     "node": ">=22"

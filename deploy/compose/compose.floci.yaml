@@ -31,7 +31,7 @@ x-floci-env: &floci-env
   AWS_SES_ACCESS_KEY: test
   AWS_SES_SECRET_KEY: test
   AWS_SES_FROM_EMAIL: no-reply@crm.example.test
-  AWS_SES_FROM_NAME: ${CRM_BRAND_NAME:-Open CRM}
+  AWS_SES_FROM_NAME: ${CRM_BRAND_NAME:-Bn Orbit}
   # Names come from infra/terraform/envs/local-floci (name_prefix open-crm-local).
   SES_EVENTS_SNS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:open-crm-local-ses-events
   SES_EVENTS_QUEUE_URL: http://floci:4566/000000000000/open-crm-local-ses-events

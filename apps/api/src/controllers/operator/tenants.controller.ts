@@ -70,3 +70,21 @@ export const cancelSubscription = async (req: Request, res: Response) => {
 export const listTransactions = async (req: Request, res: Response) => {
   sendSuccessResponse({ res, data: await billingService.listTransactions(String(req.params.id)) });
 };
+
+export const getTenantBillingProfile = async (req: Request, res: Response) => {
+  const profile = await tenantsService.getBillingProfile(String(req.params.id));
+  sendSuccessResponse({ res, data: profile ?? null });
+};
+
+export const saveTenantBillingProfile = async (req: Request, res: Response) => {
+  const profile = await tenantsService.saveBillingProfile(
+    actor(req),
+    String(req.params.id),
+    req.body ?? {}
+  );
+  sendSuccessResponse({
+    res,
+    data: profile,
+    message: "Tax invoice & legal profile saved successfully",
+  });
+};

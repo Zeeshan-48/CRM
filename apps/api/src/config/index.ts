@@ -85,7 +85,16 @@ const config = {
   AWS_SES_ACCESS_KEY: process.env.AWS_SES_ACCESS_KEY ?? "",
   AWS_SES_SECRET_KEY: process.env.AWS_SES_SECRET_KEY ?? "",
   AWS_SES_FROM_EMAIL: process.env.AWS_SES_FROM_EMAIL ?? "",
-  AWS_SES_FROM_NAME: process.env.AWS_SES_FROM_NAME || "Open CRM",
+  AWS_SES_FROM_NAME: process.env.AWS_SES_FROM_NAME || "Bn Orbit",
+
+  // Google SMTP / Generic SMTP delivery (Direct email without domain verification)
+  SMTP_HOST: process.env.SMTP_HOST || "smtp.gmail.com",
+  SMTP_PORT: Number(process.env.SMTP_PORT || "465"),
+  SMTP_SECURE: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : (process.env.SMTP_PORT !== "587"),
+  SMTP_USER: process.env.SMTP_USER || process.env.GMAIL_USER || "",
+  SMTP_PASS: process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || "",
+  SMTP_FROM_EMAIL: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || process.env.GMAIL_USER || "",
+  SMTP_FROM_NAME: process.env.SMTP_FROM_NAME || process.env.BRAND_NAME || "Bn Orbit",
 
   // The frontend (SPA) base URL, where the browser lands. Single source of
   // truth for every customer-facing link the backend builds: sign-in / invite /
@@ -97,7 +106,7 @@ const config = {
   // The operator console (platform admin) SPA base URL, used for operator
   // password-reset links. Bare origin, no trailing slash.
   OPERATOR_APP_URL: process.env.OPERATOR_APP_URL || "http://localhost:3580",
-  BRAND_NAME: process.env.BRAND_NAME || "Open CRM",
+  BRAND_NAME: process.env.BRAND_NAME || "Bn Orbit",
 
   // Per-tenant sending-domain (BYOSD) event pipeline. Empty until the SNS
   // topic + SQS queue exist (Terraform email module, or scripts/ses-infra-setup.ts); the events consumer

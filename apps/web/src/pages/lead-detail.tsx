@@ -141,9 +141,17 @@ const JOURNEY_LABELS: Record<string, string> = {
 function LeadJourney({
   status,
   dealsCount,
+  convertedContactId,
+  onViewContact,
+  onSelectStatus,
+  isUpdating,
 }: {
   status: string;
   dealsCount: number;
+  convertedContactId?: string | null;
+  onViewContact?: () => void;
+  onSelectStatus?: (status: string) => void;
+  isUpdating?: boolean;
 }) {
   const offTrack =
     status === "NURTURE" || status === "NOT_INTERESTED" || status === "DISQUALIFIED";
@@ -153,61 +161,96 @@ function LeadJourney({
 
   return (
     <div className="rounded-xl border bg-card p-4 sm:px-5">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Lead journey
-        </p>
-        {offTrack ? (
-          <Badge
-            className={cn(
-              "",
-              STATUS_STYLES[status] ?? "text-muted-foreground"
-            )}
-          >
-            {status === "NURTURE"
-              ? "Nurturing"
-              : status === "NOT_INTERESTED"
-                ? "Not interested"
-                : "Disqualified"}
-          </Badge>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Lead journey
+          </p>
+          <span className="hidden text-xs text-muted-foreground/60 sm:inline">
+            &bull; Click any stage to advance
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {offTrack ? (
+            <Badge
+              className={cn(
+                "",
+                STATUS_STYLES[status] ?? "text-muted-foreground"
+              )}
+            >
+              {status === "NURTURE"
+                ? "Nurturing"
+                : status === "NOT_INTERESTED"
+                  ? "Not interested"
+                  : "Disqualified"}
+            </Badge>
+          ) : null}
+          {onSelectStatus ? (
+            <Select
+              value={status}
+              onValueChange={(val) => onSelectStatus(val)}
+              disabled={isUpdating}
+            >
+              <SelectTrigger className="h-7 w-[160px] gap-1 border-dashed px-2 text-xs">
+                <SelectValue placeholder="Change status" />
+              </SelectTrigger>
+              <SelectContent align="end">
+                {LEAD_STATUSES.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {LEAD_STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </div>
       </div>
 
-      <ol className="mt-3 flex items-center">
+      <ol className="mt-4 flex items-center overflow-x-auto py-2 px-1">
         {LEAD_JOURNEY.map((step, i) => {
           const done = activeIdx >= 0 && i < activeIdx;
           const current = i === activeIdx;
           return (
             <React.Fragment key={step}>
-              <li className="flex flex-col items-center gap-1.5">
-                <span
+              <li className="flex shrink-0 flex-col items-center">
+                <button
+                  type="button"
+                  onClick={() => onSelectStatus?.(step)}
+                  disabled={isUpdating}
                   className={cn(
-                    "flex size-6 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors",
-                    current
-                      ? "border-brand bg-brand text-brand-foreground"
-                      : done
-                        ? "border-success bg-success text-white"
-                        : "border-border bg-muted text-muted-foreground"
+                    "group flex flex-col items-center focus:outline-none disabled:pointer-events-none",
+                    current ? "cursor-default" : "cursor-pointer"
                   )}
                 >
-                  {done ? <Check className="size-3.5" /> : i + 1}
-                </span>
-                <span
-                  className={cn(
-                    "whitespace-nowrap text-[11px]",
-                    current
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
-                  )}
-                >
-                  {JOURNEY_LABELS[step]}
-                </span>
+                  <span
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-all shadow-sm",
+                      current
+                        ? "border-brand bg-brand text-brand-foreground ring-4 ring-brand/20 shadow-sm"
+                        : done
+                          ? "border-emerald-600 bg-emerald-600 text-white"
+                          : "border-border bg-muted/60 text-muted-foreground group-hover:border-brand/70 group-hover:bg-brand/10 group-hover:text-brand group-hover:ring-4 group-hover:ring-brand/15"
+                    )}
+                  >
+                    {done ? <Check className="size-3.5 stroke-[2.5]" /> : i + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      "mt-1.5 max-w-[85px] text-center text-[11px] leading-tight transition-colors sm:max-w-[110px]",
+                      current
+                        ? "font-semibold text-foreground"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    )}
+                  >
+                    {JOURNEY_LABELS[step]}
+                  </span>
+                </button>
               </li>
               {i < LEAD_JOURNEY.length - 1 ? (
-                <span
+                <div
                   className={cn(
-                    "mx-1.5 mb-5 h-px flex-1",
-                    activeIdx >= 0 && i < activeIdx ? "bg-success" : "bg-border"
+                    "mx-2 mb-[22px] h-[2px] min-w-6 flex-1 transition-colors rounded-full",
+                    activeIdx >= 0 && i < activeIdx ? "bg-emerald-600" : "bg-border"
                   )}
                 />
               ) : null}
@@ -217,13 +260,29 @@ function LeadJourney({
       </ol>
 
       <p className="mt-3 text-[11px] text-muted-foreground">
-        {status === "CONVERTED"
-          ? dealsCount > 0
-            ? `Converted, now tracked as ${dealsCount} deal${dealsCount === 1 ? "" : "s"} in the pipeline.`
-            : "Converted, open a deal to continue in the pipeline."
-          : offTrack
-            ? "Off the active funnel. Re-engage to move back to New / Attempted."
-            : "Reach Qualified, then Convert to open a deal and continue in the pipeline."}
+        {status === "CONVERTED" ? (
+          <span>
+            {dealsCount > 0
+              ? `Converted, now tracked as ${dealsCount} deal${dealsCount === 1 ? "" : "s"} in the pipeline.`
+              : "Converted to contact."}
+            {convertedContactId && onViewContact ? (
+              <>
+                {" "}
+                <button
+                  type="button"
+                  onClick={onViewContact}
+                  className="font-medium text-brand underline underline-offset-2 hover:opacity-80"
+                >
+                  View contact &rarr;
+                </button>
+              </>
+            ) : null}
+          </span>
+        ) : offTrack ? (
+          "Off the active funnel. Click any stage above to move back to the active funnel."
+        ) : (
+          "Reach Qualified, then Convert to open a deal and continue in the pipeline."
+        )}
       </p>
     </div>
   );
@@ -928,6 +987,19 @@ export default function LeadDetailPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: (newStatus: string) =>
+      updateLead(id, { status: newStatus as LeadDetail["status"] }),
+    onSuccess: (_, newStatus) => {
+      toast.success(
+        `Lead moved to ${LEAD_STATUS_LABELS[newStatus as keyof typeof LEAD_STATUS_LABELS] || newStatus}`
+      );
+      invalidateLead();
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   if (leadQuery.isLoading) {
     return (
       <div className="space-y-5">
@@ -1128,14 +1200,26 @@ export default function LeadDetailPage() {
                 <UserCheck className="size-4" />
                 Assign
               </Button>
-              <Button
-                size="sm"
-                disabled={lead.status === "CONVERTED"}
-                onClick={() => setConvertOpen(true)}
-              >
-                <ArrowUpRight className="size-4" />
-                Convert
-              </Button>
+              {lead.converted_contact_id ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+                  onClick={() => navigate(`/contacts/${lead.converted_contact_id}`)}
+                >
+                  <ArrowUpRight className="size-4" />
+                  View Contact
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={lead.status === "CONVERTED"}
+                  onClick={() => setConvertOpen(true)}
+                >
+                  <ArrowUpRight className="size-4" />
+                  Convert
+                </Button>
+              )}
               <Button aria-label="Delete lead"
                 variant="outline"
                 size="sm"
@@ -1147,11 +1231,33 @@ export default function LeadDetailPage() {
             </div>
           </div>
         </div>
+        
       </div>
 
       {/* Lead journey (funnel position) */}
       <div className="reveal" style={{ animationDelay: "30ms" }}>
-        <LeadJourney status={lead.status} dealsCount={lead.deals.length} />
+        <LeadJourney
+          status={lead.status}
+          dealsCount={lead.deals.length}
+          convertedContactId={lead.converted_contact_id}
+          onViewContact={() => {
+            if (lead.converted_contact_id) {
+              navigate(`/contacts/${lead.converted_contact_id}`);
+            }
+          }}
+          onSelectStatus={(s) => {
+            if (s === "CONVERTED") {
+              if (lead.converted_contact_id) {
+                navigate(`/contacts/${lead.converted_contact_id}`);
+              } else {
+                setConvertOpen(true);
+              }
+            } else {
+              updateStatusMutation.mutate(s);
+            }
+          }}
+          isUpdating={updateStatusMutation.isPending}
+        />
       </div>
 
       {/* Real-data metrics */}

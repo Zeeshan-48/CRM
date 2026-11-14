@@ -279,3 +279,32 @@
 ::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.4);
 }
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #printable-tax-invoice,
+  #printable-tax-invoice * {
+    visibility: visible;
+  }
+  #printable-tax-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 15px !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: #1e293b !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+}

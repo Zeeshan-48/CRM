@@ -258,7 +258,7 @@ const offerObject = {
 export const INGEST_OPENAPI = {
   openapi: "3.1.0",
   info: {
-    title: "Open CRM, Product Integration API",
+    title: "Bn Orbit, Product Integration API",
     version: "1.0.0",
     description:
       "Connect any product to the CRM: push your catalog so agents can quote it, " +

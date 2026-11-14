@@ -51,7 +51,7 @@ export interface BrandedEmailInput {
 }
 
 export function renderBrandedEmail(input: BrandedEmailInput): string {
-  const brand = escapeHtml((input.brandName || "Open CRM").trim() || "Open CRM");
+  const brand = escapeHtml((input.brandName || "Bn Orbit").trim() || "Bn Orbit");
   const color =
     input.brandColor && isHexColor(input.brandColor) ? input.brandColor : "#b6207f";
   const colorDark = shade(color, 0.82);
@@ -121,7 +121,7 @@ export function renderBrandedEmail(input: BrandedEmailInput): string {
         <!-- Footer -->
         <tr><td style="padding:22px 36px 30px;">
           <div style="margin:0 0 4px;font-size:13px;color:#71717a;line-height:1.5;">Sent by <span style="color:#52525b;font-weight:600;">${brand}</span></div>
-          <div style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">Sent with Open CRM &middot; &copy; ${year} ${brand}</div>
+          <div style="margin:0;font-size:12px;color:#a1a1aa;line-height:1.5;">Sent with Bn Orbit &middot; &copy; ${year} ${brand}</div>
         </td></tr>
 
       </table>

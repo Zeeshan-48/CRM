@@ -5,9 +5,11 @@ import {
   createTenant,
   getSubscription,
   getTenant,
+  getTenantBillingProfile,
   listTenants,
   listTransactions,
   overrideEntitlement,
+  saveTenantBillingProfile,
   updateTenant,
 } from "../../controllers/operator/tenants.controller";
 import { requireSuperadmin } from "../../middlewares/operator-auth.middleware";
@@ -20,6 +22,7 @@ import {
   onboardTenantSchema,
   overrideEntitlementSchema,
   updateTenantSchema,
+  upsertBillingProfileSchema,
 } from "../../validators/operator/tenants.schema";
 import { asyncHandler } from "../../utils/asynchandler";
 
@@ -61,5 +64,14 @@ router.post(
   asyncHandler(cancelSubscription)
 );
 router.get("/:id/transactions", asyncHandler(listTransactions));
+
+// Tenant Tax Invoice & Legal Profile
+router.get("/:id/billing-profile", asyncHandler(getTenantBillingProfile));
+router.put(
+  "/:id/billing-profile",
+  asyncHandler(requireSuperadmin),
+  validateBody(upsertBillingProfileSchema),
+  asyncHandler(saveTenantBillingProfile)
+);
 
 export default router;

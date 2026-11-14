@@ -4,6 +4,7 @@ import {
   createPaymentLink,
   deleteInvoice,
   getGatewayDefault,
+  getMyBillingProfile,
   getRazorpayConfig,
   getStripeConfig,
   getSummary,
@@ -28,6 +29,7 @@ const router = Router();
 
 router.get("/gateways", asyncHandler(listGateways));
 router.get("/summary", asyncHandler(getSummary));
+router.get("/billing-profile", asyncHandler(getMyBillingProfile));
 router.get("/invoices", asyncHandler(listInvoices));
 router.get("/payments", asyncHandler(listPayments));
 router.post("/invoices", asyncHandler(createInvoice));

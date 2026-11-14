@@ -261,6 +261,8 @@ class DealsService {
       await engineService.emit(tenantId, actorId, "deal.won", ctx);
       await this.syncWonContract(tenantId, actorId, fresh);
       await this.markContactAsCustomer(tenantId, actorId, fresh);
+    } else {
+      await this.syncContactLifecycleFromDeals(tenantId, actorId, fresh);
     }
     engineService.audit(tenantId, actorId, "deal.moved", "deal", deal.id, {
       stage: stage.name,
@@ -304,9 +306,59 @@ class DealsService {
       await engineService.emit(tenantId, actorId, "deal.won", ctx);
       await this.syncWonContract(tenantId, actorId, fresh);
       await this.markContactAsCustomer(tenantId, actorId, fresh);
+    } else {
+      await this.syncContactLifecycleFromDeals(tenantId, actorId, fresh);
     }
     engineService.audit(tenantId, actorId, `deal.${kind}`, "deal", deal.id, {});
     return fresh;
+  }
+
+  // When a deal leaves the WON state (e.g. reverted to Qualified or marked Lost),
+  // check if the contact has any other WON deals. If none remain and the contact
+  // was CUSTOMER, safely revert its lifecycle back to PROSPECT.
+  private async syncContactLifecycleFromDeals(
+    tenantId: string,
+    actorId: string,
+    deal: DealRow
+  ): Promise<void> {
+    if (!deal.contact_id) return;
+    try {
+      const otherWonDeal = await db
+        .selectFrom("deals")
+        .select("id")
+        .where("tenant_id", "=", tenantId)
+        .where("contact_id", "=", deal.contact_id)
+        .where("status", "=", "WON")
+        .executeTakeFirst();
+
+      if (!otherWonDeal) {
+        const contact = await db
+          .selectFrom("contacts")
+          .select(["id", "lifecycle"])
+          .where("tenant_id", "=", tenantId)
+          .where("id", "=", deal.contact_id)
+          .executeTakeFirst();
+
+        if (contact && contact.lifecycle === "CUSTOMER") {
+          await db
+            .updateTable("contacts")
+            .set({ lifecycle: "PROSPECT", updated_at: new Date() })
+            .where("tenant_id", "=", tenantId)
+            .where("id", "=", deal.contact_id)
+            .execute();
+          engineService.audit(
+            tenantId,
+            actorId,
+            "contact.lifecycle_changed",
+            "contact",
+            deal.contact_id,
+            { lifecycle: "PROSPECT", source: "deal.stage_reverted", dealId: deal.id }
+          );
+        }
+      }
+    } catch (err) {
+      logger.warn(`sync contact lifecycle failed (deal ${deal.id}): ${String(err)}`);
+    }
   }
 
   // When a deal is won, materialise it as an ACTIVE contract on its account so

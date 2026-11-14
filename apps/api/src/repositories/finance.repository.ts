@@ -29,6 +29,7 @@ export interface CreateInvoiceData {
   tax: number;
   gateway?: string | null;
   due_at?: Date | null;
+  details?: unknown;
 }
 
 export interface UpdateInvoiceData {
@@ -39,6 +40,7 @@ export interface UpdateInvoiceData {
   deal_id?: string | null;
   account_id?: string | null;
   contact_id?: string | null;
+  details?: unknown;
 }
 
 export interface CreatePaymentData {
@@ -144,6 +146,12 @@ class FinanceRepository {
         gateway: data.gateway ?? "Razorpay",
         issued_at: now,
         due_at: data.due_at ?? null,
+        details:
+          data.details !== undefined
+            ? typeof data.details === "string"
+              ? data.details
+              : JSON.stringify(data.details)
+            : "{}",
         created_at: now,
         updated_at: now,
       })
@@ -187,6 +195,14 @@ class FinanceRepository {
         ...(patch.deal_id !== undefined ? { deal_id: patch.deal_id } : {}),
         ...(patch.account_id !== undefined ? { account_id: patch.account_id } : {}),
         ...(patch.contact_id !== undefined ? { contact_id: patch.contact_id } : {}),
+        ...(patch.details !== undefined
+          ? {
+              details:
+                typeof patch.details === "string"
+                  ? patch.details
+                  : JSON.stringify(patch.details),
+            }
+          : {}),
         updated_at: new Date(),
       })
       .where("id", "=", id)

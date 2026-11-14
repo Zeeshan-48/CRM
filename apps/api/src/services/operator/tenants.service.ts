@@ -15,6 +15,9 @@ import tenantsRepository, {
   TenantWithUsage,
 } from "../../repositories/operator/tenants.repository";
 import usersRepository, { TenantUserSummary } from "../../repositories/operator/users.repository";
+import tenantBillingProfileRepository, {
+  UpsertTenantBillingProfileInput,
+} from "../../repositories/tenant-billing-profile.repository";
 import logger from "../../utils/logger";
 import { generateTempPassword } from "../../utils/password";
 import auditService, { AuditActor } from "./audit.service";
@@ -403,6 +406,32 @@ class TenantsService {
       metadata: { code, enabled: row.enabled, limit_value: row.limit_value },
     });
     return row;
+  }
+
+  async getBillingProfile(tenantId: string) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+    return tenantBillingProfileRepository.findByTenantId(tenantId);
+  }
+
+  async saveBillingProfile(
+    actor: AuditActor,
+    tenantId: string,
+    body: UpsertTenantBillingProfileInput
+  ) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+
+    const profile = await tenantBillingProfileRepository.upsert(tenantId, body);
+
+    auditService.log(actor, "tenant.billing_profile_saved", "tenants", {
+      tenantId,
+      resourceId: profile.id,
+      summary: `${actor.email} updated tax invoice & legal profile for tenant ${tenant.name} (verified: ${profile.is_verified})`,
+      metadata: { is_verified: profile.is_verified, legal_name: profile.legal_name },
+    });
+
+    return profile;
   }
 }
 

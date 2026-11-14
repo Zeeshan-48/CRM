@@ -96,6 +96,43 @@ export interface TenantUsage {
 
 export interface TenantWithUsage extends Tenant {
   usage: TenantUsage;
+  billing_verified?: boolean;
+}
+
+export interface TenantBillingProfile {
+  id: string;
+  tenant_id: string;
+  legal_name: string;
+  brand_name: string | null;
+  gstin: string | null;
+  cin: string | null;
+  pan: string | null;
+  is_gst_registered: boolean;
+  address: string;
+  city: string;
+  state: string;
+  state_code: string;
+  pincode: string;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  bank_name: string;
+  account_name: string;
+  account_number: string;
+  ifsc: string;
+  upi_id: string | null;
+  invoice_prefix: string;
+  next_sequence: number;
+  signatory_name: string;
+  signatory_designation: string;
+  signature_url: string | null;
+  logo_url: string | null;
+  jurisdiction_city: string | null;
+  notes: string | null;
+  is_verified: boolean;
+  verified_at: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export type EntitlementSource = "PLAN" | "ADMIN";

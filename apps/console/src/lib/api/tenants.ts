@@ -4,6 +4,7 @@ import type {
   OnboardTenantPayload,
   OnboardTenantResponse,
   Tenant,
+  TenantBillingProfile,
   TenantDetail,
   TenantStatus,
   TenantWithUsage,
@@ -36,3 +37,9 @@ export const overrideEntitlement = (
   id: string,
   payload: { code: string; enabled?: boolean; limit_value?: number | null }
 ) => apiPut<Entitlement>(`/tenants/${id}/entitlements`, payload);
+
+export const getTenantBillingProfile = (id: string) =>
+  apiGet<TenantBillingProfile | null>(`/tenants/${id}/billing-profile`);
+
+export const saveTenantBillingProfile = (id: string, payload: Partial<TenantBillingProfile>) =>
+  apiPut<TenantBillingProfile>(`/tenants/${id}/billing-profile`, payload);

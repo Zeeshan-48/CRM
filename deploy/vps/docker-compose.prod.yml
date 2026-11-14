@@ -1,0 +1,160 @@
+# ==============================================================================
+# Bn Orbit - VPS Production Docker Compose
+# ==============================================================================
+# Self-contained production stack for a single VPS (Ubuntu 22.04 / 24.04 LTS).
+# Runs Postgres, Redis, REST API, Web App, Operator Console, and Edge Nginx.
+#
+# Usage:
+#   docker compose -f deploy/vps/docker-compose.prod.yml --env-file deploy/vps/.env.prod up -d --build
+# ==============================================================================
+
+name: bn-orbit-prod
+
+services:
+  # ---- 1. Database (PostgreSQL 16) ----
+  postgres:
+    image: postgres:16.12-alpine
+    container_name: bn-orbit-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-crm}
+      POSTGRES_USER: ${PG_DATABASE_USER:-crm}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD:?Set PG_DATABASE_PASSWORD in .env.prod}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_DATABASE_USER:-crm} -d ${PG_DATABASE:-crm}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal-net
+
+  # ---- 2. Cache & Message Queue (Redis 7) ----
+  redis:
+    image: redis:7.4-alpine
+    container_name: bn-orbit-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - internal-net
+
+  # ---- 3. Database Migration Runner (One-Shot) ----
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: bn-orbit-api:prod
+    container_name: bn-orbit-migrate
+    command: ["node", "db/migrate.js"]
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PG_DATABASE_HOST: postgres
+      PG_DATABASE_PORT: "5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - internal-net
+
+  # ---- 4. Backend REST API & Background Worker ----
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    image: bn-orbit-api:prod
+    container_name: bn-orbit-api
+    command: ["node", "--enable-source-maps", "dist/index.js"]
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      NODE_ENV: production
+      PORT: "5066"
+      PG_DATABASE_HOST: postgres
+      PG_DATABASE_PORT: "5432"
+      REDIS_URL: redis://redis:6379
+      TRUST_PROXY: "1"
+      LOCAL_STORAGE_DIR: /app/.local-storage
+    volumes:
+      - files:/app/.local-storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    networks:
+      - internal-net
+
+  # ---- 5. Main CRM Web Application (React SPA on Nginx) ----
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1
+    image: bn-orbit-web:prod
+    container_name: bn-orbit-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - internal-net
+
+  # ---- 6. Operator Console (Platform Superadmin SPA on Nginx) ----
+  console:
+    build:
+      context: ../..
+      dockerfile: infra/docker/console.Dockerfile
+      args:
+        VITE_API_BASE_URL: /api/v1/operator
+    image: bn-orbit-console:prod
+    container_name: bn-orbit-console
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - internal-net
+
+  # ---- 7. Edge Nginx Reverse Proxy (SSL & Domain Routing) ----
+  edge-nginx:
+    image: nginx:1.27-alpine
+    container_name: bn-orbit-edge-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      - web
+      - console
+      - api
+    networks:
+      - internal-net
+
+volumes:
+  pgdata:
+  redisdata:
+  files:
+  certbot_conf:
+  certbot_www:
+
+networks:
+  internal-net:
+    driver: bridge
+

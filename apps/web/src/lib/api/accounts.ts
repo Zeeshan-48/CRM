@@ -3,6 +3,22 @@ import type { Contact, Invoice } from "./contacts";
 import type { Deal } from "./deals";
 
 export type ContractStatus = "ACTIVE" | "INACTIVE" | "EXPIRED";
+export type BillingType = "ONE_TIME" | "RECURRING" | "HYBRID";
+export type RecurringInterval = "ANNUAL" | "MONTHLY";
+
+export interface ContractMilestone {
+  id: string;
+  name: string;
+  amount: number;
+  base_amount?: number;
+  tax_amount?: number;
+  tax_rate?: number;
+  due_at: string | null;
+  status: "PAID" | "PENDING" | "OVERDUE";
+  paid_at?: string | null;
+  paid_method?: string | null;
+  is_recurring?: boolean;
+}
 
 export interface Account {
   id: string;
@@ -11,8 +27,16 @@ export interface Account {
   industry: string | null;
   size: string | null;
   website: string | null;
+  project_name?: string | null;
   owner_id: string | null;
   departments: string[] | null;
+  address?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  gstin?: string | null;
+  phone?: string | null;
+  email?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +45,9 @@ export interface Account {
 export interface AccountWithStats extends Account {
   contactsCount: number;
   openValue: number;
+  hasOverdue?: boolean;
+  hasAmcDue?: boolean;
+  contractsCount?: number;
 }
 
 export interface AccountContract {
@@ -32,6 +59,10 @@ export interface AccountContract {
   title: string;
   value: number;
   status: ContractStatus;
+  billing_type: BillingType;
+  recurring_interval: RecurringInterval | null;
+  recurring_value: number;
+  milestones: ContractMilestone[];
   start_at: string | null;
   end_at: string | null;
   created_at: string;
@@ -54,6 +85,14 @@ export const createAccount = (body: {
   industry?: string;
   size?: string;
   website?: string;
+  project_name?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  gstin?: string;
+  phone?: string;
+  email?: string;
 }) => apiPost<Account>("/accounts", body);
 
 export const updateAccount = (
@@ -63,6 +102,14 @@ export const updateAccount = (
     industry?: string;
     size?: string;
     website?: string;
+    project_name?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    gstin?: string;
+    phone?: string;
+    email?: string;
   }
 ) => apiPut<Account>(`/accounts/${id}`, body);
 
@@ -74,6 +121,10 @@ export const addContract = (
     title: string;
     value: number;
     status?: ContractStatus;
+    billing_type?: BillingType;
+    recurring_interval?: RecurringInterval;
+    recurring_value?: number;
+    milestones?: ContractMilestone[];
     start_at?: string;
     end_at?: string;
   }
@@ -86,6 +137,10 @@ export const updateContract = (
     title?: string;
     value?: number;
     status?: ContractStatus;
+    billing_type?: BillingType;
+    recurring_interval?: RecurringInterval;
+    recurring_value?: number;
+    milestones?: ContractMilestone[];
     start_at?: string;
     end_at?: string;
   }

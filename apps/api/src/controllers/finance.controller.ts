@@ -4,6 +4,7 @@ import financeService from "../services/finance.service";
 import paymentGatewayService from "../services/payment-gateway.service";
 import razorpayConfigService from "../services/razorpay-config.service";
 import stripeConfigService from "../services/stripe-config.service";
+import tenantBillingProfileRepository from "../repositories/tenant-billing-profile.repository";
 import { HttpSuccessStatus, sendSuccessResponse } from "../utils/response.util";
 
 const ctx = (req: Request) => {
@@ -169,4 +170,10 @@ export const createPaymentLink = async (req: Request, res: Response) => {
     statusCode: HttpSuccessStatus.CREATED,
     message: "Payment link created",
   });
+};
+
+export const getMyBillingProfile = async (req: Request, res: Response) => {
+  const { tenantId } = ctx(req);
+  const profile = await tenantBillingProfileRepository.findByTenantId(tenantId);
+  sendSuccessResponse({ res, data: profile ?? null });
 };

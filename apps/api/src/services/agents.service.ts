@@ -1,3 +1,4 @@
+import config from "../config";
 import { email_category } from "../db/enums";
 import { BadRequestError, NotFoundError } from "../errors";
 import agentsRepository, {
@@ -58,7 +59,7 @@ export type AgentKey = (typeof AGENT_DEFINITIONS)[number]["key"];
 export const HIDDEN_AGENT_KEYS = new Set<string>(["support", "knowledge"]);
 
 // Default sender brand for agent outreach (white-label default).
-const BRAND = "Open CRM";
+const BRAND = config.BRAND_NAME || "Bn Orbit";
 
 // Sales cooldown: a lead contacted (or with a pending draft) within this many
 // days is not re-drafted, so repeated runs never spam the same people.

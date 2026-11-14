@@ -6,6 +6,7 @@ import emailSuppressionsRepository from "../repositories/email-suppressions.repo
 import logger from "../utils/logger";
 import emailResolverService, { ResolvedSender } from "./email-resolver.service";
 import emailSesClient from "./email-ses.client";
+import smtpClient from "./smtp.client";
 import rateLimitService from "./rate-limit.service";
 import reputationService from "./reputation.service";
 import { renderBrandedEmail } from "../utils/email-html";
@@ -83,7 +84,7 @@ class MailerService {
   private readonly ensuredConfigSets = new Map<string, Promise<string | null>>();
 
   isLive(): boolean {
-    return emailSesClient.isLive();
+    return smtpClient.isConfigured() || emailSesClient.isLive();
   }
 
   async send(params: SendMailParams): Promise<SentMail> {
@@ -157,6 +158,38 @@ class MailerService {
     category: email_category,
     params: SendMailParams
   ): Promise<SentMail> {
+    if (smtpClient.isConfigured()) {
+      const fromAddr = config.SMTP_FROM_EMAIL || config.SMTP_USER;
+      const msg = await emailMessagesRepository.create({
+        tenant_id: params.tenantId,
+        category,
+        sending_domain_id: null,
+        sender_identity_id: null,
+        from_address: fromAddr,
+        to_address: to,
+        subject: params.subject,
+        idempotency_key: params.idempotencyKey ?? null,
+        status: "QUEUED",
+      });
+
+      try {
+        const r = await smtpClient.sendEmail({
+          to,
+          subject: params.subject,
+          text: params.text,
+          html: params.html,
+          replyTo: params.replyTo,
+          headers: this.unsubscribeHeaders(category, params.tenantId, to),
+        });
+        await emailMessagesRepository.markSent(msg.id, r.messageId);
+        void reputationService.recordSend(params.tenantId, msg.id);
+        return { messageId: r.messageId, provider: "SES", mode: "legacy" };
+      } catch (err) {
+        await emailMessagesRepository.markFailed(msg.id, String(err));
+        throw err;
+      }
+    }
+
     if (!config.AWS_SES_FROM_EMAIL) {
       return { messageId: `sim_${Date.now()}_${to}`, provider: "SIMULATED", mode: "legacy" };
     }

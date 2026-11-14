@@ -37,7 +37,7 @@ x-api-env: &api-env
   TZ: UTC
   PORT: "5066"
   LOG_LEVEL: ${LOG_LEVEL:-info}
-  BRAND_NAME: ${CRM_BRAND_NAME:-Open CRM}
+  BRAND_NAME: ${CRM_BRAND_NAME:-Bn Orbit}
   # Where the browser lands (links in emails, booking pages, OAuth and checkout returns).
   CRM_APP_URL: http://localhost:${CRM_WEB_PORT:-3570}
   OPERATOR_APP_URL: http://localhost:${CRM_CONSOLE_PORT:-3580}

@@ -146,6 +146,7 @@ export default function TenantsPage() {
                 <TableHead>Slug</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Invoice Setup</TableHead>
                 <TableHead className="text-right">Users</TableHead>
                 <TableHead className="text-right">Leads</TableHead>
                 <TableHead>Created</TableHead>
@@ -181,6 +182,17 @@ export default function TenantsPage() {
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={tenant.status} />
+                  </TableCell>
+                  <TableCell>
+                    {tenant.billing_verified ? (
+                      <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-[11px] py-0 px-2">
+                        ✓ Verified
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="border-amber-400 bg-amber-50 text-amber-800 font-medium text-[11px] py-0 px-2">
+                        ⏳ Pending
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatNumber(tenant.usage.users)}

@@ -1,8 +1,8 @@
 {
-  "name": "euron-open-crm",
-  "version": "0.1.0",
+  "name": "bn-orbit",
+  "version": "2.0.0",
   "private": true,
-  "description": "Self-hosted multi-tenant CRM: leads, deals, inbox over email and WhatsApp, campaigns, tickets, workflows, telephony, AI copilot and product-signal ingestion, with an operator plane that sells plans and bills tenants. Express + Postgres + React, Terraform for AWS, a local AWS emulator for development.",
+  "description": "Bn Orbit: Self-hosted multi-tenant CRM: leads, deals, inbox over email and WhatsApp, campaigns, tickets, workflows, telephony, AI copilot and product-signal ingestion, with an operator plane that sells plans and bills tenants. Express + Postgres + React, Terraform for AWS, a local AWS emulator for development.",
   "license": "MIT",
   "packageManager": "pnpm@9.15.0",
   "engines": {

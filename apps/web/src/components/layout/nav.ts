@@ -66,8 +66,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Leads", path: "/leads", icon: UserPlus, module: "leads" },
       { label: "Contacts", path: "/contacts", icon: Users, module: "contacts" },
-      { label: "Accounts", path: "/accounts", icon: Building2, module: "accounts" },
       { label: "Pipeline", path: "/pipeline", icon: Kanban, module: "deals" },
+      { label: "Accounts", path: "/accounts", icon: Building2, module: "accounts" },
       { label: "Activities", path: "/activities", icon: ListTodo, module: "activities" },
       // Product integration: the catalog an agent pitches from, and the feed
       // of people showing buying intent inside a connected product.

@@ -5,7 +5,10 @@ import type { tenant_status } from "../../db/enums";
 import type { DB, tenants } from "../../db/types";
 
 export type TenantRow = Selectable<tenants>;
-export type TenantWithUsage = TenantRow & { usage: { users: number; leads: number } };
+export type TenantWithUsage = TenantRow & {
+  usage: { users: number; leads: number };
+  billing_verified?: boolean | null;
+};
 
 class TenantsRepository {
   async listWithUsage(filters: {
@@ -26,6 +29,11 @@ class TenantsRepository {
           .select((ib) => ib.fn.count<number>("leads.id").as("n"))
           .whereRef("leads.tenant_id", "=", "tenants.id")
           .as("leads_count"),
+        eb
+          .selectFrom("tenant_billing_profiles")
+          .select("tenant_billing_profiles.is_verified")
+          .whereRef("tenant_billing_profiles.tenant_id", "=", "tenants.id")
+          .as("billing_verified"),
       ]);
     if (filters.q) {
       const like = `%${filters.q}%`;
@@ -36,8 +44,9 @@ class TenantsRepository {
     if (filters.status) query = query.where("tenants.status", "=", filters.status);
 
     const rows = await query.orderBy("tenants.created_at", "asc").execute();
-    return rows.map(({ users_count, leads_count, ...tenant }) => ({
+    return rows.map(({ users_count, leads_count, billing_verified, ...tenant }) => ({
       ...tenant,
+      billing_verified: billing_verified ?? false,
       usage: { users: Number(users_count ?? 0), leads: Number(leads_count ?? 0) },
     }));
   }

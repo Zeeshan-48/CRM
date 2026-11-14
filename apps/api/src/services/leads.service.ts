@@ -4,6 +4,8 @@ import { db } from "../db/connection";
 import type { lead_status } from "../db/enums";
 import { BadRequestError, ConflictError, NotFoundError } from "../errors";
 import identitiesRepository from "../repositories/identities.repository";
+import contactsRepository from "../repositories/contacts.repository";
+import dealsRepository from "../repositories/deals.repository";
 import leadsRepository, {
   BulkCreateLeadData,
   LeadRow,
@@ -836,91 +838,158 @@ class LeadsService {
     const lead = await leadsRepository.findById(leadId, tenantId);
     if (!lead) throw new NotFoundError("Lead not found");
 
+    // Idempotency: If this lead was already converted, return existing records
+    if (lead.converted_contact_id) {
+      const existingContact = await contactsRepository.findById(lead.converted_contact_id, tenantId);
+      if (existingContact) {
+        let existingDeal = null;
+        if (lead.converted_deal_id) {
+          existingDeal = await dealsRepository.findDealById(lead.converted_deal_id, tenantId);
+        }
+        return { contact: existingContact, deal: existingDeal, alreadyConverted: true };
+      }
+    }
+
     const result = await db.transaction().execute(async (trx) => {
       const now = new Date();
-      const contact = await trx
-        .insertInto("contacts")
-        .values({
-          id: ulid(),
-          tenant_id: tenantId,
-          name: lead.name,
-          email: lead.email,
-          phone: lead.phone,
-          city: lead.city,
-          owner_id: lead.owner_id,
-          tags: JSON.stringify(parseStringArray(lead.tags)),
-          socials: JSON.stringify(parseSocials(lead.socials) ?? {}),
-          // Conversion makes a PROSPECT; the contact only becomes a CUSTOMER
-          // once one of its deals is Won (see deals.service markContactAsCustomer).
-          lifecycle: "PROSPECT",
-          converted_from_lead_id: lead.id,
-          last_activity_at: now,
-          created_at: now,
-          updated_at: now,
-        })
-        .returningAll()
-        .executeTakeFirstOrThrow();
 
-      let deal = null;
-      if (body.createDeal) {
-        const pipeline = await trx
-          .selectFrom("pipelines")
+      // Deduplication: Check if a contact with this email or phone already exists
+      let contact: any = null;
+      if (lead.email) {
+        contact = await trx
+          .selectFrom("contacts")
           .selectAll()
           .where("tenant_id", "=", tenantId)
-          .where("is_default", "=", true)
+          .where((eb) => eb(eb.fn("lower", ["email"]), "=", lead.email!.toLowerCase()))
           .executeTakeFirst();
-        if (!pipeline) throw new BadRequestError("No default pipeline configured");
-        const stages = await trx
-          .selectFrom("stages")
-          .selectAll()
-          .where("tenant_id", "=", tenantId)
-          .where("pipeline_id", "=", pipeline.id)
-          .orderBy("sort_order", "asc")
-          .execute();
-        const stage = stages[0];
-        if (!stage) throw new BadRequestError("Default pipeline has no stages");
+      }
 
-        const dealId = ulid();
-        const value = body.value || 50000;
-        // Stored AI fields, computed the same way POST /deals computes them. A
-        // converted deal used to be inserted without them, so the pipeline board
-        // and forecast showed a blank health chip and a zero win probability for
-        // exactly the deals that came from a real qualified lead. No activities
-        // exist yet, so this is the stage-and-value baseline.
-        const health = dealHealth(
-          {
-            id: dealId,
-            stage_id: stage.id,
-            value,
-            status: "OPEN",
-            created_at: now,
-          },
-          stages,
-          []
-        );
+      if (!contact && lead.phone) {
+        const normPhone = normalizePhoneForStore(lead.phone);
+        if (normPhone) {
+          contact = await trx
+            .selectFrom("contacts")
+            .selectAll()
+            .where("tenant_id", "=", tenantId)
+            .where("phone", "=", normPhone)
+            .executeTakeFirst();
+        }
+      }
 
-        deal = await trx
-          .insertInto("deals")
+      if (contact) {
+        // Reuse existing contact! If it was still LEAD, promote to PROSPECT.
+        const shouldUpgrade = contact.lifecycle === "LEAD";
+        const needsLeadLink = !contact.converted_from_lead_id;
+        if (shouldUpgrade || needsLeadLink) {
+          contact = await trx
+            .updateTable("contacts")
+            .set({
+              lifecycle: shouldUpgrade ? "PROSPECT" : contact.lifecycle,
+              converted_from_lead_id: contact.converted_from_lead_id || lead.id,
+              updated_at: now,
+            })
+            .where("id", "=", contact.id)
+            .where("tenant_id", "=", tenantId)
+            .returningAll()
+            .executeTakeFirstOrThrow();
+        }
+      } else {
+        contact = await trx
+          .insertInto("contacts")
           .values({
-            id: dealId,
+            id: ulid(),
             tenant_id: tenantId,
-            pipeline_id: pipeline.id,
-            stage_id: stage.id,
-            title: `${lead.name.split(" ")[0]} - Deal`,
-            value,
-            currency: "INR",
+            name: lead.name,
+            email: lead.email,
+            phone: lead.phone,
+            city: lead.city,
             owner_id: lead.owner_id,
-            lead_id: lead.id,
-            contact_id: contact.id,
-            status: "OPEN",
-            win_probability: health.winProbability,
-            health_score: health.score,
-            health_label: health.label,
+            tags: JSON.stringify(parseStringArray(lead.tags)),
+            socials: JSON.stringify(parseSocials(lead.socials) ?? {}),
+            // Conversion makes a PROSPECT; the contact only becomes a CUSTOMER
+            // once one of its deals is Won (see deals.service markContactAsCustomer).
+            lifecycle: "PROSPECT",
+            converted_from_lead_id: lead.id,
+            last_activity_at: now,
             created_at: now,
             updated_at: now,
           })
           .returningAll()
           .executeTakeFirstOrThrow();
+      }
+
+      let deal: any = null;
+      if (body.createDeal) {
+        // Check if an existing deal already exists for this lead
+        const existingDeal = await trx
+          .selectFrom("deals")
+          .selectAll()
+          .where("tenant_id", "=", tenantId)
+          .where("lead_id", "=", lead.id)
+          .executeTakeFirst();
+
+        if (existingDeal) {
+          deal = existingDeal;
+        } else {
+          const pipeline = await trx
+            .selectFrom("pipelines")
+            .selectAll()
+            .where("tenant_id", "=", tenantId)
+            .where("is_default", "=", true)
+            .executeTakeFirst();
+          if (!pipeline) throw new BadRequestError("No default pipeline configured");
+          const stages = await trx
+            .selectFrom("stages")
+            .selectAll()
+            .where("tenant_id", "=", tenantId)
+            .where("pipeline_id", "=", pipeline.id)
+            .orderBy("sort_order", "asc")
+            .execute();
+          const stage = stages[0];
+          if (!stage) throw new BadRequestError("Default pipeline has no stages");
+
+          const dealId = ulid();
+          const value = body.value || 50000;
+          // Stored AI fields, computed the same way POST /deals computes them. A
+          // converted deal used to be inserted without them, so the pipeline board
+          // and forecast showed a blank health chip and a zero win probability for
+          // exactly the deals that came from a real qualified lead. No activities
+          // exist yet, so this is the stage-and-value baseline.
+          const health = dealHealth(
+            {
+              id: dealId,
+              stage_id: stage.id,
+              value,
+              status: "OPEN",
+              created_at: now,
+            },
+            stages,
+            []
+          );
+
+          deal = await trx
+            .insertInto("deals")
+            .values({
+              id: dealId,
+              tenant_id: tenantId,
+              pipeline_id: pipeline.id,
+              stage_id: stage.id,
+              title: `${lead.name.split(" ")[0]} - Deal`,
+              value,
+              currency: "INR",
+              owner_id: lead.owner_id,
+              lead_id: lead.id,
+              contact_id: contact.id,
+              status: "OPEN",
+              win_probability: health.winProbability,
+              health_score: health.score,
+              health_label: health.label,
+              created_at: now,
+              updated_at: now,
+            })
+            .returningAll()
+            .executeTakeFirstOrThrow();
+        }
       }
 
       await trx

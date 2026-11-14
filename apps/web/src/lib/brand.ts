@@ -4,15 +4,15 @@
 
 export const BRAND = {
   /** Product name shown in the UI. */
-  name: "Open CRM",
-  /** Lowercase wordmark pieces: "open" + accent "crm." */
-  wordmark: { lead: "open", accent: "crm." },
+  name: "Bn Orbit",
+  /** Lowercase wordmark pieces: "bn" + accent "orbit." */
+  wordmark: { lead: "bn", accent: "orbit." },
   /** One-letter mark used in the square logo tile. */
-  initial: "O",
+  initial: "B",
   /** Default accent (magenta, hue 322) when a tenant has no brand colour. */
   defaultColor: "#b6207f",
   /** Name used for the platform-provided (shared) provider accounts. */
-  platformName: "Open CRM platform",
-  poweredBy: "Powered by Open CRM",
-  assistantName: "Open CRM assistant",
+  platformName: "Bn Orbit platform",
+  poweredBy: "Powered by Bn Orbit",
+  assistantName: "Bn Orbit assistant",
 } as const;

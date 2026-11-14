@@ -5,6 +5,7 @@ import financeRepository, {
   InvoiceRow,
   PaymentRow,
 } from "../repositories/finance.repository";
+import tenantBillingProfileRepository from "../repositories/tenant-billing-profile.repository";
 import logger from "../utils/logger";
 import engineService from "./engine.service";
 import paymentGatewayService from "./payment-gateway.service";
@@ -42,11 +43,13 @@ class FinanceService {
     body: {
       amount?: unknown;
       tax?: unknown;
+      number?: string;
       dealId?: string;
       accountId?: string;
       contactId?: string;
       dueAt?: string;
       gateway?: string;
+      details?: unknown;
     }
   ) {
     if (body.amount === undefined || body.amount === null) {
@@ -82,8 +85,22 @@ class FinanceService {
       throw new NotFoundError("Contact not found");
     }
 
-    const maxSuffix = await financeRepository.maxInvoiceNumberSuffix(tenantId);
-    const number = `INV-${maxSuffix != null ? maxSuffix + 1 : Date.now()}`;
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+
+    let number = body.number && String(body.number).trim() ? String(body.number).trim() : null;
+    if (!number) {
+      const allocated = await tenantBillingProfileRepository.allocateNextInvoiceNumber(tenantId);
+      if (allocated) {
+        number = allocated.number;
+      } else {
+        const maxSuffix = await financeRepository.maxInvoiceNumberSuffix(tenantId);
+        const nextSeq = String(maxSuffix != null ? (maxSuffix % 100) + 1 : 1).padStart(2, "0");
+        number = `BNI-${yyyy}/${mm}${dd}${nextSeq}`;
+      }
+    }
 
     const invoice = await financeRepository.createInvoice({
       tenant_id: tenantId,
@@ -95,6 +112,7 @@ class FinanceService {
       tax,
       gateway: body.gateway ?? "Razorpay",
       due_at: dueAt,
+      details: body.details,
     });
 
     engineService.audit(tenantId, actorId, "invoice.created", "invoice", invoice.id, {
@@ -118,6 +136,7 @@ class FinanceService {
       contactId?: string | null;
       dueAt?: string | null;
       gateway?: string;
+      details?: unknown;
     }
   ) {
     const invoice = await financeRepository.findInvoiceById(invoiceId, tenantId);
@@ -134,6 +153,7 @@ class FinanceService {
       deal_id?: string | null;
       account_id?: string | null;
       contact_id?: string | null;
+      details?: unknown;
     } = {};
 
     if (body.amount !== undefined && body.amount !== null) {
@@ -178,6 +198,9 @@ class FinanceService {
         throw new NotFoundError("Contact not found");
       }
       patch.contact_id = body.contactId ?? null;
+    }
+    if (body.details !== undefined) {
+      patch.details = body.details;
     }
 
     const updated = await financeRepository.updateInvoice(invoiceId, tenantId, patch);

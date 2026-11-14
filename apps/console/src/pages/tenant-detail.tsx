@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/layout/EmptyState";
 import { StatCard } from "@/components/layout/StatCard";
 import { StatusBadge } from "@/components/layout/StatusBadge";
 import { SubscriptionCard } from "@/components/tenants/SubscriptionCard";
+import { TenantBillingProfileCard } from "@/components/tenants/TenantBillingProfileCard";
 import { TransactionsCard } from "@/components/tenants/TransactionsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -375,6 +376,11 @@ export default function TenantDetailPage() {
       {/* Subscription */}
       <section className="reveal" style={{ animationDelay: "80ms" }}>
         <SubscriptionCard tenantId={id} isSuperadmin={canWrite} />
+      </section>
+
+      {/* Tax Invoice & Legal Profile */}
+      <section className="reveal" style={{ animationDelay: "100ms" }}>
+        <TenantBillingProfileCard tenant={tenant} canWrite={canWrite} />
       </section>
 
       {/* Admin users */}

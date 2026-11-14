@@ -206,7 +206,7 @@ class WebhookDispatchService {
       event: webhook.event,
       payload: {
         test: true,
-        message: "This is a test delivery from Open CRM.",
+        message: "This is a test delivery from Bn Orbit.",
         sent_at: new Date().toISOString(),
       },
     });

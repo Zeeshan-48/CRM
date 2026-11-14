@@ -2,6 +2,7 @@ import { sesClientOptions, sesConfigured } from "../../utils/aws";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import config from "../../config";
 import logger from "../../utils/logger";
+import smtpClient from "../smtp.client";
 
 export interface SendEmailInput {
   to: string;
@@ -24,6 +25,7 @@ class EmailService {
   private client: SESv2Client | null = null;
 
   isConfigured(): boolean {
+    if (smtpClient.isConfigured()) return true;
     // Never sends from the test runner, like the tenant mail path.
     const underTest = config.NODE_ENV === "test" || process.env.VITEST === "true";
     return sesConfigured() && !underTest;
@@ -43,6 +45,21 @@ class EmailService {
   }
 
   async send(input: SendEmailInput): Promise<SendEmailResult> {
+    if (smtpClient.isConfigured()) {
+      try {
+        const res = await smtpClient.sendEmail({
+          to: input.to,
+          subject: input.subject,
+          text: input.text,
+          html: input.html,
+        });
+        return { sent: true, messageId: res.messageId };
+      } catch (err) {
+        logger.error(`[operator-email] SMTP error sending to ${input.to}: ${String(err)}`);
+        return { sent: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    }
+
     if (!this.isConfigured()) {
       logger.warn(
         `[email] SES not configured (set a verified AWS_SES_FROM_EMAIL); skipped email to ${input.to} "${input.subject}"`
