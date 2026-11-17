@@ -112,11 +112,11 @@ export default function TenantVaultPage() {
   const tenants = tenantsQuery.data ?? [];
   const tenantMap = React.useMemo(() => {
     const map = new Map<string, string>();
-    for (const t of tenants) {
+    for (const t of tenantsQuery.data ?? []) {
       map.set(t.id, t.name);
     }
     return map;
-  }, [tenants]);
+  }, [tenantsQuery.data]);
 
   const selectedTenantId = activeTenantId === ALL_TENANTS ? undefined : activeTenantId;
 

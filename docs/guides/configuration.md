@@ -63,7 +63,7 @@ never runs with `NODE_ENV=production`, and the shared WhatsApp webhook answers 4
 | `LOG_LEVEL` | `info` | Winston level: `error`, `warn`, `info`, `debug`, ... |
 | `TRUST_PROXY` | `1` | Number of reverse proxies in front of the API, passed to Express `trust proxy`. Decides which `X-Forwarded-For` entry is the client IP for rate limits. 1 behind a load balancer, 2 behind CloudFront plus a load balancer, 0 when browsers reach the API directly (compose) |
 | `CORS_ORIGINS` | `CRM_APP_URL,OPERATOR_APP_URL` | Comma-separated browser origins allowed to call the API. Trailing slashes are stripped and `*` is refused, because responses carry credentials. Required in production. `/api/v1/ingest/*` answers any origin regardless |
-| `BRAND_NAME` | `Open CRM` | Display name in emails |
+| `BRAND_NAME` | `Bn Orbit` | Display name in emails |
 
 ### Secrets
 
@@ -133,7 +133,7 @@ Bare origins, no trailing slash.
 | `AWS_SES_REGION` | `AWS_REGION` | |
 | `AWS_SES_ACCESS_KEY`, `AWS_SES_SECRET_KEY` | blank | Static keys for the SES, SNS and SQS clients; blank uses the default chain |
 | `AWS_SES_FROM_EMAIL` | blank | The platform sender, a verified SES identity. Blank: email is simulated (recorded, not sent) |
-| `AWS_SES_FROM_NAME` | `Open CRM` | |
+| `AWS_SES_FROM_NAME` | `Bn Orbit` | |
 | `SES_EVENTS_SNS_TOPIC_ARN` | blank | Topic every per-tenant SES configuration set publishes delivery events to |
 | `SES_EVENTS_QUEUE_URL` | blank | SQS queue behind that topic, long-polled by the API. Blank: the events consumer stays idle |
 | `SES_INBOUND_QUEUE_URL` | blank | SQS queue fed by an SES receipt rule, for inbound mail. Blank: the inbound consumer stays idle |
@@ -270,7 +270,7 @@ On AWS, [`scripts/aws-deploy.sh`](../../scripts/aws-deploy.sh) builds each app w
 | `CRM_JWT_SECRET` | required, generated | `JWT_SECRET` |
 | `CRM_CREDENTIALS_ENCRYPTION_KEY` | required, generated | `CREDENTIALS_ENCRYPTION_KEY` |
 | `CRM_DEMO_PASSWORD` | generated (`Demo-` and 12 random characters) | `DEMO_PASSWORD` for `make demo` |
-| `CRM_BRAND_NAME` | `Open CRM` | `BRAND_NAME` (and the SES sender name with Floci) |
+| `CRM_BRAND_NAME` | `Bn Orbit` | `BRAND_NAME` (and the SES sender name with Floci) |
 | `CRM_WEB_PORT`, `CRM_CONSOLE_PORT`, `CRM_API_PORT` | `3570`, `3580`, `5066` | Host ports, and `CRM_APP_URL`, `OPERATOR_APP_URL`, `APP_PUBLIC_URL`, `CORS_ORIGINS` and the apps' `VITE_API_BASE_URL` |
 | `CRM_PG_PORT`, `CRM_REDIS_PORT` | `5532`, `6469` | Host ports. The Makefile's `test-integration` and [`scripts/test-db.sh`](../../scripts/test-db.sh) read them from the shell, not from `.env` |
 | `CRM_FLOCI_PORT`, `CRM_MAILPIT_PORT` | `4637`, `8086` | Host ports of the emulator overlay |

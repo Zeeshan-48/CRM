@@ -65,7 +65,7 @@ function BrandMark({ className }: { className?: string }) {
 }
 
 /**
- * Product wordmark: the lowercase "open crm." treatment from the login
+ * Product wordmark: the lowercase "bn orbit." treatment from the login
  * hero, compacted for the top bar, with a spaced uppercase caption beneath.
  */
 function BrandWordmark({ className }: { className?: string }) {

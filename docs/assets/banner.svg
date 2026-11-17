@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="t d">
-  <title id="t">Euron Open CRM</title>
-  <desc id="d">Euron Open CRM: a self-hosted, multi-tenant CRM. Leads, deals, an inbox over email and WhatsApp, campaigns, tickets, workflows, telephony, an AI copilot and product signals, with an operator console that sells plans and bills tenants.</desc>
+  <title id="t">Bn Orbit</title>
+  <desc id="d">Bn Orbit: a self-hosted, multi-tenant CRM. Leads, deals, an inbox over email and WhatsApp, campaigns, tickets, workflows, telephony, an AI copilot and product signals, with an operator console that sells plans and bills tenants.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0B1220"/>
@@ -22,7 +22,7 @@
       <rect x="24.5" y="16" width="7" height="17" rx="3.5" fill="#0B1220"/>
       <rect x="36" y="16" width="7" height="10" rx="3.5" fill="#C0267E"/>
     </g>
-    <text x="144" y="110" font-family="Bricolage Grotesque, Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#F5F7FA">Euron Open CRM</text>
+    <text x="144" y="110" font-family="Bricolage Grotesque, Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="26" font-weight="600" fill="#F5F7FA">Bn Orbit</text>
 
     <text x="72" y="190" font-family="Bricolage Grotesque, Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="46" font-weight="700" fill="#FFFFFF" letter-spacing="-1">Every customer, one workspace.</text>
     <text x="72" y="232" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif" font-size="19" fill="#C7CDD8">Leads, deals, email and WhatsApp, tickets, calls and product signals,</text>

@@ -1,5 +1,5 @@
 /**
- * Open CRM server SDK.
+ * Bn Orbit server SDK.
  *
  * Zero dependencies, Node 18+ (uses global fetch). Wraps the ingest API so an
  * integrating product does not have to reimplement idempotency keys, batching,

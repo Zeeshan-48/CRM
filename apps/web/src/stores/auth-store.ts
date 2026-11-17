@@ -18,7 +18,7 @@ const hexToRgb = (hex: string): [number, number, number] | null => {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
 
-/** Default accent: the Open CRM magenta (see BRAND.defaultColor). */
+/** Default accent: the Bn Orbit magenta (see BRAND.defaultColor). */
 const DEFAULT_BRAND_RGB: [number, number, number] = hexToRgb(BRAND.defaultColor) ?? [182, 32, 127];
 
 const rgbToHsl = (

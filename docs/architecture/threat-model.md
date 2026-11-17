@@ -1,6 +1,6 @@
 # Threat model
 
-A STRIDE pass over Euron Open CRM: what is worth stealing or abusing, where trust changes,
+A STRIDE pass over Bn Orbit: what is worth stealing or abusing, where trust changes,
 what stops each threat, and what is left. The controls themselves are in
 [security.md](security.md).
 

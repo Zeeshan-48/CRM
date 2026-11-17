@@ -1,6 +1,6 @@
 # @open-crm/api
 
-The Euron Open CRM API: one Express 5 service that serves the tenant plane (`/api/v1`), the
+The Bn Orbit API: one Express 5 service that serves the tenant plane (`/api/v1`), the
 operator plane (`/api/v1/operator`), product ingest (`/api/v1/ingest`) and provider webhooks,
 and runs the background jobs. PostgreSQL through Kysely, optional Redis, Node cluster mode.
 

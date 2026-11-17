@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
-  <title id="title">Euron Open CRM in context</title>
+  <title id="title">Bn Orbit in context</title>
   <desc id="desc">Workspace staff and prospects use the tenant app; operator staff use the operator console. Both static apps call one API with bearer tokens. Connected products call the ingest plane with crm_sk_ or crm_pk_ keys and receive signed webhooks and actions. The API stores data in PostgreSQL, uses Redis for the job schedule and rate limits, and keeps files in S3 or on local disk. It calls SES, the WhatsApp Cloud API, Twilio and Exotel, Razorpay and Stripe, optional AI providers and Google Calendar, which call back through signed webhooks or URL tokens.</desc>
   <style>
     .bg { fill: #f8fafc; }
@@ -36,7 +36,7 @@
     <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="aa" d="M0 0L10 5L0 10z"/></marker>
   </defs>
   <rect class="bg" width="1200" height="620" rx="14"/>
-  <text class="h" x="40" y="48">Euron Open CRM in context</text>
+  <text class="h" x="40" y="48">Bn Orbit in context</text>
   <text class="s" x="40" y="70">Every external service on the right is optional: without keys it runs simulated.</text>
 
   <rect class="box" x="40" y="110" width="200" height="60" rx="10"/>

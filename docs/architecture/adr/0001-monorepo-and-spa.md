@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Euron Open CRM has three kinds of caller: workspace staff in a browser, the operator's own
+Bn Orbit has three kinds of caller: workspace staff in a browser, the operator's own
 staff in a browser, and connected products sending data from servers and web pages. They share
 one data model (tenants, entitlements, leads, events) and many services. The project started as
 separate repositories for the tenant API, the operator API and each frontend, with the operator

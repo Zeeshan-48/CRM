@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { UnauthorizedError } from "../errors";
 import authService from "../services/auth.service";
-import { HttpSuccessStatus, sendSuccessResponse } from "../utils/response.util";
+import { sendSuccessResponse } from "../utils/response.util";
 
 // Best-effort client IP + device, recorded on sign-in / sign-out audit events.
 // Prefers the left-most X-Forwarded-For hop (real client behind our proxy),

@@ -1,5 +1,5 @@
 /**
- * Open CRM offline AI engine: deterministic heuristics, no external keys.
+ * Bn Orbit offline AI engine: deterministic heuristics, no external keys.
  * Faithful TypeScript port of the v1 server/ai.js. Inputs are shaped like
  * Kysely rows (snake_case) so services can pass query results straight in.
  * Generative seams (email writer, copilot, coach, voice) are swappable for

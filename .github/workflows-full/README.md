@@ -1,6 +1,6 @@
 # Full CI pipeline (opt-in)
 
-These workflows are the complete quality pipeline for Euron Open CRM. They are kept
+These workflows are the complete quality pipeline for Bn Orbit. They are kept
 here, outside `.github/workflows/`, so they do **not** run on the upstream repository.
 Only the [`checks`](../workflows/checks.yml) workflow (lint, typecheck, unit tests,
 build, the API integration tests on Postgres + Redis, the sanitization scan, Terraform

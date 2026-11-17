@@ -1,7 +1,7 @@
 # Claude Code skill: open-crm-integration
 
 A Claude Code skill for the other side of the integration. Copy it into a product's
-repository and Claude can wire that product into Euron Open CRM without anyone reading
+repository and Claude can wire that product into Bn Orbit without anyone reading
 this codebase first.
 
 It lives next to the API it describes for the same reason the ingest contract is served by

@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# One complete Euron Open CRM deployment: network, data, cache, keys, mail, file
+# One complete Bn Orbit deployment: network, data, cache, keys, mail, file
 # storage, the API on ECS Fargate, and the two single-page apps on S3 + CloudFront:
 #
 #   https://<domain>/*                  web      (the CRM workspace SPA, from S3)

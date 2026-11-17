@@ -1,6 +1,6 @@
 # @open-crm/sdk
 
-Server-side SDK for connecting a product to Euron Open CRM: lead capture, identity,
+Server-side SDK for connecting a product to Bn Orbit: lead capture, identity,
 behavioural events and catalog sync. It wraps the ingest API (`/api/v1/ingest`) so a
 product does not have to reimplement idempotency keys, batching, retries or the
 minor-unit money rules.

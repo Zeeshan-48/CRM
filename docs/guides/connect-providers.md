@@ -1,6 +1,6 @@
 # Connect real providers
 
-Euron Open CRM starts with every outside provider simulated: email is recorded instead of
+Bn Orbit starts with every outside provider simulated: email is recorded instead of
 sent, WhatsApp and calls get fake ids, payment links are canned, AI answers come from
 offline heuristics ([ADR 0006](../architecture/adr/0006-simulated-providers-for-local-and-tests.md)).
 This guide turns each one into the real thing. Paths are relative to the repository root.
@@ -63,7 +63,7 @@ AWS_SES_REGION=us-east-1
 AWS_SES_ACCESS_KEY=           # optional: blank uses the default AWS credential chain
 AWS_SES_SECRET_KEY=
 AWS_SES_FROM_EMAIL=crm@mail.example.com      # the platform sender
-AWS_SES_FROM_NAME=Open CRM
+AWS_SES_FROM_NAME=Bn Orbit
 APP_PUBLIC_URL=https://crm-api.example.com   # unsubscribe links point here
 ```
 

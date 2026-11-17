@@ -1,6 +1,6 @@
 # Security architecture
 
-The controls Euron Open CRM relies on, where each lives in the code, and what it does not
+The controls Bn Orbit relies on, where each lives in the code, and what it does not
 cover yet. The STRIDE analysis is [threat-model.md](threat-model.md). How to report a
 vulnerability: [SECURITY.md](../../SECURITY.md). Paths are relative to the repository root.
 

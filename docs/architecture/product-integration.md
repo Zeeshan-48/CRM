@@ -1,6 +1,6 @@
 # Product integration
 
-How an external software product connects to Euron Open CRM: it publishes its catalog,
+How an external software product connects to Bn Orbit: it publishes its catalog,
 streams what people do inside it, and receives CRM events back. The CRM never models the
 product's domain. It models a contract (a catalog, a generic event stream, an identity
 graph) and renders product-specific facts from metadata the product supplies. Paths are

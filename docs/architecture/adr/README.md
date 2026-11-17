@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Short records of the decisions that shape Euron Open CRM: the context, what was decided, and
+Short records of the decisions that shape Bn Orbit: the context, what was decided, and
 what it costs. The system as built is described in [HLD.md](../HLD.md) and [LLD.md](../LLD.md).
 
 | ADR | Decision |

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Euron Open CRM. This guide covers the workflow, the bar a change
+Thanks for helping improve Bn Orbit. This guide covers the workflow, the bar a change
 has to clear, and the conventions the codebase follows.
 
 ## Ground rules

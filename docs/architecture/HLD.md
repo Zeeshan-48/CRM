@@ -1,6 +1,6 @@
 # High-level design
 
-Euron Open CRM is a self-hosted, multi-tenant CRM. An operator runs one deployment and
+Bn Orbit is a self-hosted, multi-tenant CRM. An operator runs one deployment and
 sells workspaces (tenants) on plans. Each workspace gets leads, contacts, accounts, a deal
 pipeline, a unified inbox over email and WhatsApp, campaigns, tickets and a knowledge base,
 a calendar with public booking pages, no-code workflows, telephony, an AI copilot and a sales

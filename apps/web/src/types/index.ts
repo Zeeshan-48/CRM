@@ -1,4 +1,4 @@
-// Shared types for the Open CRM frontend. These mirror the response shapes
+// Shared types for the Bn Orbit frontend. These mirror the response shapes
 // of open-crm-api (every endpoint wraps payloads in the envelope below;
 // the axios client unwraps `.data` before these types are seen by callers).
 

@@ -3,7 +3,7 @@ import animate from "tailwindcss-animate";
 
 // Operator console theming: true-black DARK palette by default (tokens on
 // :root), with a refined light mode applied via the `.light` class. The brand
-// accent is the fixed Open CRM magenta (hue 322; no per-tenant re-tinting).
+// accent is the fixed Bn Orbit magenta (hue 322; no per-tenant re-tinting).
 export default {
   darkMode: "class",
   content: ["./index.html", "./src/**/*.{ts,tsx}"],

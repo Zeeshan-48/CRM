@@ -103,7 +103,7 @@ The environment variables ([`envs/aws-dev/variables.tf`](../../infra/terraform/e
 | `certificate_arn`, `cdn_certificate_arn` | null | Your own regional and `us-east-1` certificates, when the zone is not in Route 53 |
 | `mail_domain` | `domain` | SES sending domain |
 | `inbound_domain` | null | Domain whose mail SES receives for the CRM inbox; null disables inbound mail |
-| `product_name` | `Open CRM` | `BRAND_NAME` and the sender name |
+| `product_name` | `Bn Orbit` | `BRAND_NAME` and the sender name |
 | `alarm_email` | null | Who receives the CloudWatch alarms (confirm the SNS subscription email) |
 | `provider_secrets` | `{}` | Platform provider keys by variable name ([below](#provider-keys)) |
 | `simulate_providers` | `true` in aws-dev, `false` in aws-prod | Forces simulated WhatsApp, telephony, Razorpay, Stripe and platform billing even with keys present |

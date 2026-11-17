@@ -62,7 +62,7 @@ variable "dmarc_policy" {
 variable "product_name" {
   description = "BRAND_NAME: the product name in emails, and the sender name (AWS_SES_FROM_NAME)."
   type        = string
-  default     = "Open CRM"
+  default     = "Bn Orbit"
 }
 
 variable "image_tag" {

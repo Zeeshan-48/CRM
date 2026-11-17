@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="Euron Open CRM: every customer, one workspace. Leads, deals, email and WhatsApp, tickets, calls and product signals, for many workspaces on one deployment you run" width="100%">
+  <img src="docs/assets/banner.svg" alt="Bn Orbit: every customer, one workspace. Leads, deals, email and WhatsApp, tickets, calls and product signals, for many workspaces on one deployment you run" width="100%">
 </p>
 
 <p align="center">
@@ -44,7 +44,7 @@
   <b><a href="#-documentation">Docs</a></b>
 </p>
 
-**Euron Open CRM** is an open-source, self-hosted, **multi-tenant CRM**: one deployment serves
+**Bn Orbit** is an open-source, self-hosted, **multi-tenant CRM**: one deployment serves
 many separate workspaces, each with its own users, roles, data, channels and branding, and an
 **operator console** that sells plans, snapshots them into entitlements and bills each
 workspace through Stripe or Razorpay. Inside a workspace, sales and support teams work leads,
@@ -87,7 +87,7 @@ The parts that usually go wrong in a multi-tenant CRM are designed in, not bolte
 <h3 align="center">Built by the team behind Euron</h3>
 
 <p align="center">
-  <sub>Euron Open CRM is part of the open-source initiative of ENGAGESPHERE TECHNOLOGY PRIVATE LIMITED, made by the people who build<br>the platforms below. If you like how this repository is built, come and see what we build with it.</sub>
+  <sub>Bn Orbit is part of the open-source initiative of ENGAGESPHERE TECHNOLOGY PRIVATE LIMITED, made by the people who build<br>the platforms below. If you like how this repository is built, come and see what we build with it.</sub>
 </p>
 
 <p align="center">
@@ -108,7 +108,7 @@ The parts that usually go wrong in a multi-tenant CRM are designed in, not bolte
 
 ## 📚 Table of contents
 
-- [Why Euron Open CRM](#-why-euron-open-crm)
+- [Why Bn Orbit](#-why-bn-orbit)
 - [At a glance](#-at-a-glance)
 - [Screenshots](#️-screenshots)
 - [Features](#-features)
@@ -127,13 +127,13 @@ The parts that usually go wrong in a multi-tenant CRM are designed in, not bolte
 - [FAQ](#-faq)
 - [Contributing, security and license](#-contributing-security-and-license)
 
-## 💡 Why Euron Open CRM
+## 💡 Why Bn Orbit
 
 Most open-source CRMs are built for one company. Running a CRM **for other companies** (an
 agency serving clients, a SaaS adding a CRM to its product, a platform team serving business
 units) needs more than a `tenant_id` column: plans and limits that are enforced at runtime,
 roles that differ per workspace, provider accounts that belong to each workspace, billing for
-the workspaces themselves, and a console to run it all. Euron Open CRM ships that operator
+the workspaces themselves, and a console to run it all. Bn Orbit ships that operator
 layer together with a full sales and service product, and treats your own product's usage as
 a sales signal instead of an afterthought.
 

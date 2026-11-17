@@ -1,6 +1,6 @@
-# Open CRM Frontend
+# Bn Orbit Frontend
 
-Tenant-facing web app of Open CRM, the open-source, multi-tenant agentic CRM
+Tenant-facing web app of Bn Orbit, the open-source, multi-tenant agentic CRM
 ("Customer OS"). A LinkedIn-style shell (top bar + left rail)
 over 25+ pages covering sales, omnichannel conversations, marketing, service,
 automation, AI agents, analytics and finance. The accent color re-themes

@@ -1,5 +1,4 @@
 import { db } from "../db/connection";
-import telephonyRepository from "../repositories/telephony.repository";
 import logger from "../utils/logger";
 
 interface PlivoConfigRow {
@@ -88,7 +87,7 @@ class PlivoWebhookService {
 
     logger.info(`[plivo-webhook] recording ready for callUuid=${callUuid}: ${recordingUrl}`);
 
-    let query = db.updateTable("voice_calls").set({
+    const query = db.updateTable("voice_calls").set({
       recording_url: String(recordingUrl),
       updated_at: new Date(),
     });

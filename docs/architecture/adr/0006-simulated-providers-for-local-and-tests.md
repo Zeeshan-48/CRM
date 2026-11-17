@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Euron Open CRM talks to many outside services: SES, Meta's WhatsApp Cloud API, Twilio,
+Bn Orbit talks to many outside services: SES, Meta's WhatsApp Cloud API, Twilio,
 Exotel, Razorpay, Stripe, Google Calendar, Gemini, OpenAI and Anthropic. Someone trying the
 product, a contributor, or CI should not need an account with any of them, and no test may
 send a real email, place a real call or charge a real card. At the same time the code paths

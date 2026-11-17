@@ -33,7 +33,7 @@
 
     /* Tenant brand accent as an RGB triplet; the auth store rewrites this
        at runtime from tenant.brand_color (contrast-adjusted per theme).
-       Default is the Open CRM magenta, hsl(322 70% 42%) = #b6207f. */
+       Default is the Bn Orbit magenta, hsl(322 70% 42%) = #b6207f. */
     --brand: 182 32 127;
     --brand-foreground: 255 255 255;
 

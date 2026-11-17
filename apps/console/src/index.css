@@ -6,7 +6,7 @@
   :root {
     /* True-black DARK palette (default): near-pure black canvas (#080808) ->
        cards (#0F0F0F) -> popovers (#171717), neutral hairline borders, with the
-       Open CRM magenta accent (hue 322). */
+       Bn Orbit magenta accent (hue 322). */
     --background: 0 0% 3%;
     --foreground: 0 0% 95%;
 

@@ -1,4 +1,4 @@
-// Shared types for the Open CRM Operator console. These mirror the response
+// Shared types for the Bn Orbit Operator console. These mirror the response
 // shapes of apps/api (operator plane) (every endpoint wraps payloads in the
 // envelope below; the axios client unwraps `.data` before callers see these).
 

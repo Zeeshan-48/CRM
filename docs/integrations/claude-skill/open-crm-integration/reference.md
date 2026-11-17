@@ -1,4 +1,4 @@
-# Open CRM integration reference
+# Bn Orbit integration reference
 
 When in doubt the live spec wins: `GET {BASE}/api/v1/ingest/openapi.json`.
 

@@ -1,6 +1,6 @@
 # Integrate your product
 
-For a team wiring its software product into Euron Open CRM. When it is done, an agent
+For a team wiring its software product into Bn Orbit. When it is done, an agent
 looking at a lead sees what that person did inside your product, what you sell, what it
 costs today and which offers apply, and can act back on your product from the record.
 

@@ -34,7 +34,7 @@ describe("renderBrandedEmail", () => {
 
   it("falls back to a default brand name and color when missing", () => {
     const html = renderBrandedEmail({ brandName: "", brandColor: "not-a-color", bodyText: "Hi" });
-    expect(html).toContain("Open CRM");
+    expect(html).toContain("Bn Orbit");
     expect(html).toContain("#b6207f");
   });
 });

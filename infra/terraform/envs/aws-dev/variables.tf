@@ -68,7 +68,7 @@ variable "image_tag" {
 variable "product_name" {
   description = "BRAND_NAME shown in emails and as the sender name."
   type        = string
-  default     = "Open CRM"
+  default     = "Bn Orbit"
 }
 
 variable "alarm_email" {

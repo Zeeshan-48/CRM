@@ -1,6 +1,6 @@
 # Walkthrough
 
-A tour of Euron Open CRM with the demo data, as a workspace admin, a sales agent, a
+A tour of Bn Orbit with the demo data, as a workspace admin, a sales agent, a
 second tenant on a smaller plan, and the operator. Everything named here is created by
 [`apps/api/scripts/seed.ts`](../../apps/api/scripts/seed.ts) and
 [`apps/api/scripts/seed-product-integration.ts`](../../apps/api/scripts/seed-product-integration.ts).

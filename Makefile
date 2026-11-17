@@ -1,4 +1,4 @@
-# Euron Open CRM: developer entry points. `make` lists every target.
+# Bn Orbit: developer entry points. `make` lists every target.
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 

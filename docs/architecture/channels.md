@@ -1,6 +1,6 @@
 # Channels
 
-How Euron Open CRM sends and receives email, WhatsApp messages and phone calls, and how
+How Bn Orbit sends and receives email, WhatsApp messages and phone calls, and how
 the inbox and campaigns sit on top of them. Every channel has a simulated mode, so the
 whole product runs with no provider account ([ADR 0006](adr/0006-simulated-providers-for-local-and-tests.md)).
 Turning each one on for real: [../guides/connect-providers.md](../guides/connect-providers.md).

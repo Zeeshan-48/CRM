@@ -1,10 +1,10 @@
 ---
 name: open-crm-integration
-description: Integrate this product with Euron Open CRM so sales agents see what customers do in it. Covers pushing the catalog and prices, sending product events (page views, trials, checkout), identity stitching for anonymous visitors, lead capture, receiving CRM webhooks, and answering product actions the CRM calls. Use when wiring up Open CRM, sending product analytics or intent signals to a CRM, syncing a catalog or pricing to a CRM, handling crm_sk_ / crm_pk_ API keys, using @open-crm/sdk, or verifying an X-CRM-Signature.
+description: Integrate this product with Bn Orbit so sales agents see what customers do in it. Covers pushing the catalog and prices, sending product events (page views, trials, checkout), identity stitching for anonymous visitors, lead capture, receiving CRM webhooks, and answering product actions the CRM calls. Use when wiring up Bn Orbit, sending product analytics or intent signals to a CRM, syncing a catalog or pricing to a CRM, handling crm_sk_ / crm_pk_ API keys, using @open-crm/sdk, or verifying an X-CRM-Signature.
 argument-hint: [catalog|events|identity|tracker|webhooks|actions]
 ---
 
-# Integrating with Euron Open CRM
+# Integrating with Bn Orbit
 
 The CRM is product-agnostic. It learns about your product from four inbound calls
 (catalog, events, identity, leads) and calls back out two ways (webhooks, actions). It

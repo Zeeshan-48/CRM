@@ -1,6 +1,6 @@
 # Quickstart: run the CRM locally
 
-Start Euron Open CRM on your machine, seed two demo workspaces and an operator, and sign
+Start Bn Orbit on your machine, seed two demo workspaces and an operator, and sign
 in. No cloud account, no provider key and no payment account are needed. Paths are relative
 to the repository root.
 

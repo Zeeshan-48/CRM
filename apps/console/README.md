@@ -1,6 +1,6 @@
-# Open CRM Operator Frontend
+# Bn Orbit Operator Frontend
 
-Operator console for Open CRM, the open-source CRM SaaS: the control plane
+Operator console for Bn Orbit, the open-source CRM SaaS: the control plane
 where the fleet is managed. Dark "control room" theme. Operators onboard
 tenants with a two-step wizard, manage plans, edit per-tenant entitlements,
 suspend or reactivate workspaces, and review fleet metrics and the operator

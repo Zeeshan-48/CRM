@@ -1,6 +1,6 @@
 # AI
 
-What Euron Open CRM uses a language model for, what runs without one, and where each
+What Bn Orbit uses a language model for, what runs without one, and where each
 piece lives. Every AI feature works with no API key: a deterministic offline provider
 answers instead. Paths are relative to the repository root.
 

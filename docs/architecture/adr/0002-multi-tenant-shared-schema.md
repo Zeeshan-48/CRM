@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-Euron Open CRM is run by an operator who sells workspaces to many organisations (in the
+Bn Orbit is run by an operator who sells workspaces to many organisations (in the
 demo, Northwind Academy and Acme Robotics). Each workspace needs its own users, roles,
 leads, conversations, provider credentials and settings, with no way to see another's.
 The operator needs one place to onboard tenants, sell plans and bill them, and one
