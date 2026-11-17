@@ -35,6 +35,7 @@ import {
   type RecurringInterval,
 } from "@/lib/api/accounts";
 import { listContacts, updateContact } from "@/lib/api/contacts";
+import type { Deal } from "@/lib/api/deals";
 import { createInvoice, deleteInvoice, payInvoice } from "@/lib/api/finance";
 import { TaxInvoiceModal, type InvoiceLike } from "@/components/finance/TaxInvoiceModal";
 import { amountToINRWords } from "@/lib/inr-words";
@@ -109,6 +110,7 @@ export default function AccountsPage() {
   const [taxInvoiceOpen, setTaxInvoiceOpen] = React.useState(false);
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [assignContactId, setAssignContactId] = React.useState("");
+  const [invoiceContactId, setInvoiceContactId] = React.useState("");
   const [accountForm, setAccountForm] = React.useState({
     name: "",
     project_name: "",
@@ -122,6 +124,7 @@ export default function AccountsPage() {
     state: "",
     pincode: "",
     gstin: "",
+    contact_id: "",
   });
   const [editForm, setEditForm] = React.useState({
     name: "",
@@ -219,6 +222,7 @@ export default function AccountsPage() {
     },
     enabled: Boolean(activeId),
   });
+  const detail = detailQuery.data;
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -236,7 +240,14 @@ export default function AccountsPage() {
         pincode: accountForm.pincode.trim() || undefined,
         gstin: accountForm.gstin.trim() || undefined,
       }),
-    onSuccess: (account) => {
+    onSuccess: async (account) => {
+      if (accountForm.contact_id) {
+        try {
+          await updateContact(accountForm.contact_id, { account_id: account.id });
+        } catch (e) {
+          console.error("Failed to link contact to new account", e);
+        }
+      }
       toast.success(`Account "${account.name}" created`);
       setCreateOpen(false);
       setAccountForm({
@@ -252,18 +263,20 @@ export default function AccountsPage() {
         state: "",
         pincode: "",
         gstin: "",
+        contact_id: "",
       });
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts-all"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
 
-  // All contacts, for the "assign contact" picker. Loads lazily when the dialog
-  // opens; contacts already on this account are filtered out in the UI.
+  // All contacts, for the "assign contact" picker, new account linker, and invoice modal.
   const allContactsQuery = useQuery({
     queryKey: ["contacts-all"],
     queryFn: () => listContacts(),
-    enabled: assignOpen,
+    enabled: Boolean(activeId) || invoiceOpen || assignOpen || createOpen,
   });
 
   const assignMutation = useMutation({
@@ -279,6 +292,8 @@ export default function AccountsPage() {
       queryClient.invalidateQueries({ queryKey: ["accounts"] });
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
       queryClient.invalidateQueries({ queryKey: ["contacts-all"] });
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
+      queryClient.invalidateQueries({ queryKey: ["deals-board"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -476,7 +491,7 @@ export default function AccountsPage() {
       newStatus: "PAID" | "PENDING";
     }) => {
       if (!activeId) throw new Error("No active account selected");
-      let updatedMilestones = (contract.milestones || []).map((m) => {
+      const updatedMilestones = (contract.milestones || []).map((m) => {
         if (m.id === milestoneId) {
           return {
             ...m,
@@ -612,11 +627,15 @@ export default function AccountsPage() {
         !invoiceForm.placeOfSupply.includes("(20)") &&
         !invoiceForm.placeOfSupply.toLowerCase().includes("jharkhand");
 
-      const primaryContact = detail?.contacts?.[0];
-      const clientPhone = invoiceForm.clientPhone || primaryContact?.phone || "";
-      const clientEmail = invoiceForm.clientEmail || primaryContact?.email || "";
+      const primaryContact = resolvePrimaryContact();
+      const currentContact =
+        availableContacts.find((c) => c.id === invoiceContactId) || primaryContact;
+      const clientPhone = invoiceForm.clientPhone || detail?.phone || currentContact?.phone || "";
+      const clientEmail = invoiceForm.clientEmail || detail?.email || currentContact?.email || "";
 
       const detailsPayload = {
+        contract_id: invoiceForm.contractId || undefined,
+        milestone_id: invoiceForm.milestoneId || undefined,
         client_name: detail?.name,
         client_address: invoiceForm.clientAddress || detail?.address || "",
         client_phone: clientPhone,
@@ -665,7 +684,7 @@ export default function AccountsPage() {
         amount: baseAmt,
         tax: taxAmt,
         accountId: activeId,
-        contactId: primaryContact?.id,
+        contactId: invoiceContactId || currentContact?.id,
         dueAt: invoiceForm.dueAt || undefined,
         details: detailsPayload,
       });
@@ -712,8 +731,60 @@ export default function AccountsPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
+  const getInvoiceForMilestone = (milestoneId: string) => {
+    if (!milestoneId || !detail?.invoices) return undefined;
+    return detail.invoices.find((inv) => {
+      let d = inv.details;
+      if (typeof d === "string") {
+        try {
+          d = JSON.parse(d);
+        } catch {
+          d = {};
+        }
+      }
+      return (d as Record<string, unknown> | null)?.milestone_id === milestoneId;
+    });
+  };
+
+  const availableContacts = React.useMemo(() => {
+    const list: import("@/lib/api/contacts").Contact[] = [];
+    const seen = new Set<string>();
+    (detail?.contacts || []).forEach((c) => {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        list.push(c);
+      }
+    });
+    (allContactsQuery.data || []).forEach((c) => {
+      if (!seen.has(c.id)) {
+        seen.add(c.id);
+        list.push(c);
+      }
+    });
+    return list;
+  }, [detail?.contacts, allContactsQuery.data]);
+
+  const resolvePrimaryContact = React.useCallback((): import("@/lib/api/contacts").Contact | undefined => {
+    if (detail?.contacts && detail.contacts.length > 0) {
+      return detail.contacts[0];
+    }
+    if (detail?.deals && detail.deals.length > 0) {
+      for (const d of detail.deals) {
+        if (d.contact_id) {
+          const m = availableContacts.find((c) => c.id === d.contact_id);
+          if (m) return m;
+        }
+      }
+    }
+    if (availableContacts.length > 0) {
+      return availableContacts[0];
+    }
+    return undefined;
+  }, [detail?.contacts, detail?.deals, availableContacts]);
+
   const openNewInvoiceModal = () => {
-    const primaryContact = detail?.contacts?.[0];
+    const primaryContact = resolvePrimaryContact();
+    setInvoiceContactId(primaryContact?.id || "");
     const fullClientAddress = [
       detail?.address,
       detail?.city,
@@ -740,12 +811,12 @@ export default function AccountsPage() {
       applyGst: true,
       dueAt: new Date().toISOString().slice(0, 10),
       placeOfSupply: place,
-      clientAddress: fullClientAddress || "Pathalkudwa church lane",
+      clientAddress: fullClientAddress || "101, Business Park, Tech Zone, Mumbai - 400001",
       clientGstin: detail?.gstin || "",
       clientPhone: detail?.phone || primaryContact?.phone || "",
       clientEmail: detail?.email || primaryContact?.email || "",
       projectType: "IT Services, Software Dev.",
-      projectName: detail?.project_name || firstContract?.title || "Ngo Website Dynamic -Impact Inclusive",
+      projectName: detail?.project_name || firstContract?.title || "Web Application & Software Development",
       projectValue: firstContract ? String(firstContract.value) : "",
       reverseCharge: "No",
       paymentTerms: "Payment due within 15 days of invoice date.",
@@ -757,7 +828,8 @@ export default function AccountsPage() {
     contract: AccountContract,
     milestone: ContractMilestone,
   ) => {
-    const primaryContact = detail?.contacts?.[0];
+    const primaryContact = resolvePrimaryContact();
+    setInvoiceContactId(primaryContact?.id || "");
     const baseAmt =
       milestone.base_amount ||
       Math.round(milestone.amount / (milestone.tax_rate ? 1.18 : 1));
@@ -792,12 +864,12 @@ export default function AccountsPage() {
         ? milestone.due_at.slice(0, 10)
         : new Date().toISOString().slice(0, 10),
       placeOfSupply: place,
-      clientAddress: fullClientAddress || "Pathalkudwa church lane",
+      clientAddress: fullClientAddress || "101, Business Park, Tech Zone, Mumbai - 400001",
       clientGstin: detail?.gstin || "",
       clientPhone: detail?.phone || primaryContact?.phone || "",
       clientEmail: detail?.email || primaryContact?.email || "",
       projectType: "IT Services, Software Dev.",
-      projectName: detail?.project_name || contract.title || "Ngo Website Dynamic -Impact Inclusive",
+      projectName: detail?.project_name || contract.title || "Web Application & Software Development",
       projectValue: String(contract.value || milestone.amount),
       reverseCharge: "No",
       paymentTerms: "Payment due within 15 days of invoice date.",
@@ -1089,23 +1161,48 @@ export default function AccountsPage() {
     }));
   };
 
-  const openAddContract = () => {
+  const openAddContract = (dealOverride?: Deal) => {
     setEditingContractId(null);
     const today = new Date().toISOString().slice(0, 10);
     const nextYear = new Date();
     nextYear.setFullYear(nextYear.getFullYear() + 1);
     const nextYearStr = nextYear.toISOString().slice(0, 10);
 
-    const initialMilestones = generatePresetMilestones("50_50", 0, today, nextYearStr);
+    const linkedDeal =
+      dealOverride ||
+      detail?.deals?.find((d) => d.status === "WON") ||
+      detail?.deals?.find((d) => d.status === "OPEN") ||
+      detail?.deals?.[0];
+
+    const defaultTitle =
+      detail?.project_name ||
+      linkedDeal?.title ||
+      (detail?.name ? `${detail.name} Contract` : "");
+
+    const defaultBaseVal = linkedDeal?.value ? Number(linkedDeal.value) : 0;
+    const defaultValStr = defaultBaseVal > 0 ? String(defaultBaseVal) : "";
+
+    const defaultGst = true;
+    const defaultTotalVal =
+      defaultBaseVal > 0
+        ? defaultBaseVal + (defaultGst ? Math.round(defaultBaseVal * 0.18) : 0)
+        : 0;
+
+    const initialMilestones = generatePresetMilestones(
+      "50_50",
+      defaultTotalVal,
+      today,
+      nextYearStr,
+    );
 
     setContractForm({
-      title: "",
-      value: "",
+      title: defaultTitle,
+      value: defaultValStr,
       status: "ACTIVE",
       billing_type: "ONE_TIME",
       recurring_interval: "ANNUAL",
       recurring_value: "",
-      apply_gst: true,
+      apply_gst: defaultGst,
       start_at: today,
       end_at: nextYearStr,
       payment_plan: "50_50",
@@ -1279,7 +1376,6 @@ export default function AccountsPage() {
   };
 
   const accounts = accountsQuery.data ?? [];
-  const detail = detailQuery.data;
   const showEmpty =
     !accountsQuery.isLoading && !accountsQuery.isError && accounts.length === 0;
 
@@ -1420,10 +1516,35 @@ export default function AccountsPage() {
                       {formatNumber(account.contactsCount)} contacts
                     </p>
                     <p className="text-sm font-semibold tabular-nums">
-                      {formatINR(account.openValue)}
-                      <span className="ml-1 text-xs font-normal text-muted-foreground">
-                        open
-                      </span>
+                      {account.openValue > 0 ? (
+                        <>
+                          {formatINR(account.openValue)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            open
+                          </span>
+                        </>
+                      ) : (account.contractValue || 0) > 0 ? (
+                        <>
+                          {formatINR(account.contractValue || 0)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            contract
+                          </span>
+                        </>
+                      ) : (account.wonValue || 0) > 0 ? (
+                        <>
+                          {formatINR(account.wonValue || 0)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            won
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {formatINR(0)}
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            open
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                 </button>
@@ -1513,7 +1634,7 @@ export default function AccountsPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={openAddContract}
+                      onClick={() => openAddContract()}
                     >
                       <Plus className="size-3.5" />
                       Add contract
@@ -1821,17 +1942,39 @@ export default function AccountsPage() {
                                             </div>
                                             {m.status === "PAID" ? (
                                               <>
-                                                <Button
-                                                  variant="outline"
-                                                  size="sm"
-                                                  className="h-6 px-2 text-[11px] text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 shadow-none font-medium"
-                                                  onClick={() =>
-                                                    openInvoiceForMilestone(contract, m)
+                                                {(() => {
+                                                  const linkedInv = getInvoiceForMilestone(m.id);
+                                                  if (linkedInv) {
+                                                    return (
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-[11px] text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 shadow-none font-medium flex items-center gap-1"
+                                                        onClick={() => {
+                                                          setSelectedInvoice(linkedInv);
+                                                          setTaxInvoiceOpen(true);
+                                                        }}
+                                                        title={`View / Print Paid Receipt #${linkedInv.number}`}
+                                                      >
+                                                        <Printer className="size-3" />
+                                                        Receipt #{linkedInv.number}
+                                                      </Button>
+                                                    );
                                                   }
-                                                  title="Generate / View Paid Receipt for this milestone"
-                                                >
-                                                  🧾 Receipt
-                                                </Button>
+                                                  return (
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      className="h-6 px-2 text-[11px] text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 shadow-none font-medium"
+                                                      onClick={() =>
+                                                        openInvoiceForMilestone(contract, m)
+                                                      }
+                                                      title="Generate Paid Receipt for this milestone"
+                                                    >
+                                                      🧾 + Receipt
+                                                    </Button>
+                                                  );
+                                                })()}
                                                 <Button
                                                   variant="ghost"
                                                   size="sm"
@@ -1854,31 +1997,54 @@ export default function AccountsPage() {
                                                 </Button>
                                               </>
                                             ) : (
-                                              <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className={cn(
-                                                  "h-6 px-2 text-[11px] font-medium shadow-none",
-                                                  overdue
-                                                    ? "border-destructive/40 text-destructive hover:bg-destructive/10"
-                                                    : "border-emerald-600/30 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30",
-                                                )}
-                                                disabled={
-                                                  toggleMilestoneMutation.isPending
-                                                }
-                                                onClick={() =>
-                                                  toggleMilestoneMutation.mutate(
-                                                    {
-                                                      contract,
-                                                      milestoneId: m.id,
-                                                      newStatus: "PAID",
-                                                    },
-                                                  )
-                                                }
-                                              >
-                                                <Check className="mr-1 size-3" />
-                                                Mark Paid
-                                              </Button>
+                                              <>
+                                                {(() => {
+                                                  const linkedInv = getInvoiceForMilestone(m.id);
+                                                  if (linkedInv) {
+                                                    return (
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-6 px-2 text-[11px] text-blue-700 border-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800 shadow-none font-medium flex items-center gap-1"
+                                                        onClick={() => {
+                                                          setSelectedInvoice(linkedInv);
+                                                          setTaxInvoiceOpen(true);
+                                                        }}
+                                                        title={`View / Print Invoice #${linkedInv.number}`}
+                                                      >
+                                                        <Printer className="size-3" />
+                                                        Inv #{linkedInv.number}
+                                                      </Button>
+                                                    );
+                                                  }
+                                                  return null;
+                                                })()}
+                                                <Button
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className={cn(
+                                                    "h-6 px-2 text-[11px] font-medium shadow-none",
+                                                    overdue
+                                                      ? "border-destructive/40 text-destructive hover:bg-destructive/10"
+                                                      : "border-emerald-600/30 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30",
+                                                  )}
+                                                  disabled={
+                                                    toggleMilestoneMutation.isPending
+                                                  }
+                                                  onClick={() =>
+                                                    toggleMilestoneMutation.mutate(
+                                                      {
+                                                        contract,
+                                                        milestoneId: m.id,
+                                                        newStatus: "PAID",
+                                                      },
+                                                    )
+                                                  }
+                                                >
+                                                  <Check className="mr-1 size-3" />
+                                                  Mark Paid
+                                                </Button>
+                                              </>
                                             )}
                                           </div>
                                         </div>
@@ -2003,6 +2169,15 @@ export default function AccountsPage() {
                             >
                               {deal.status}
                             </Badge>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 px-2 text-[11px] font-medium"
+                              onClick={() => openAddContract(deal)}
+                            >
+                              <FileSignature className="mr-1 size-3" />
+                              Contract
+                            </Button>
                           </div>
                         </li>
                       ))}
@@ -2079,9 +2254,12 @@ export default function AccountsPage() {
                               className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                               disabled={deleteInvoiceMutation.isPending}
                               onClick={async () => {
+                                const isPaid = invoice.status === "PAID";
                                 const ok = await confirm({
-                                  title: "Delete Invoice?",
-                                  description: `Invoice ${invoice.number} will be permanently deleted. This cannot be undone.`,
+                                  title: isPaid ? "Delete Paid Receipt?" : "Delete Invoice?",
+                                  description: isPaid
+                                    ? `Receipt ${invoice.number} will be deleted and unlinked from its milestone. You will be able to re-generate it cleanly anytime.`
+                                    : `Invoice ${invoice.number} will be permanently deleted. This cannot be undone.`,
                                   confirmText: "Delete",
                                   destructive: true,
                                 });
@@ -2111,7 +2289,7 @@ export default function AccountsPage() {
               A company you sell to or service.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3 px-1">
+          <div className="grid gap-3 py-1">
             <div className="grid gap-1.5">
               <Label htmlFor="a-name">Name</Label>
               <Input
@@ -2135,7 +2313,7 @@ export default function AccountsPage() {
                 placeholder="e.g. NGO Website Dynamic – Impact Inclusive"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label htmlFor="a-industry">Industry</Label>
                 <Input
@@ -2170,7 +2348,48 @@ export default function AccountsPage() {
                 placeholder="acme.in"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            {allContactsQuery.data && allContactsQuery.data.length > 0 && (
+              <div className="grid gap-1.5 rounded-lg border bg-muted/40 p-2.5">
+                <Label htmlFor="a-contact" className="text-xs text-muted-foreground flex items-center justify-between">
+                  <span>Link Primary Contact (Optional)</span>
+                  {accountForm.contact_id && (
+                    <span className="text-[11px] text-emerald-600 font-medium">Auto-fills Phone & Email</span>
+                  )}
+                </Label>
+                <Select
+                  value={accountForm.contact_id || "none"}
+                  onValueChange={(cid) => {
+                    if (cid === "none") {
+                      setAccountForm((prev) => ({ ...prev, contact_id: "" }));
+                      return;
+                    }
+                    const c = allContactsQuery.data?.find((item) => item.id === cid);
+                    if (c) {
+                      setAccountForm((prev) => ({
+                        ...prev,
+                        contact_id: cid,
+                        phone: prev.phone || c.phone || "",
+                        email: prev.email || c.email || "",
+                        city: prev.city || c.city || "",
+                      }));
+                    }
+                  }}
+                >
+                  <SelectTrigger id="a-contact" className="h-8 text-xs">
+                    <SelectValue placeholder="Select contact (e.g. Rahul Verma)..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-- None --</SelectItem>
+                    {allContactsQuery.data.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ""} {c.email ? `• ${c.email}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-1.5">
                 <Label htmlFor="a-phone">Phone</Label>
                 <Input
@@ -2191,7 +2410,7 @@ export default function AccountsPage() {
                   onChange={(e) =>
                     setAccountForm({ ...accountForm, email: e.target.value })
                   }
-                  placeholder="accounts@client.com"
+                  placeholder="accounts@example.com"
                 />
               </div>
             </div>
@@ -2206,7 +2425,7 @@ export default function AccountsPage() {
                 placeholder="Street address, building, area"
               />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <div className="grid gap-1.5">
                 <Label htmlFor="a-city">City</Label>
                 <Input
@@ -2287,6 +2506,59 @@ export default function AccountsPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-2">
+            {!editingContractId && (detail?.deals && detail.deals.length > 0) && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-950/20 p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1.5 font-medium text-emerald-800 dark:text-emerald-300">
+                    <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    Synced from Contact Deal ({detail.deals.length} available)
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    Click to switch deal value
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.deals.map((d) => {
+                    const isSelected = String(d.value) === contractForm.value;
+                    return (
+                      <button
+                        key={d.id}
+                        type="button"
+                        onClick={() => {
+                          const numBase = Number(d.value) || 0;
+                          const numGst = contractForm.apply_gst ? Math.round(numBase * 0.18) : 0;
+                          const newTotal = numBase + numGst;
+                          const newMilestones = generatePresetMilestones(
+                            (contractForm.payment_plan as any) || "50_50",
+                            newTotal,
+                            contractForm.start_at,
+                            contractForm.end_at,
+                          );
+                          setContractForm((prev) => ({
+                            ...prev,
+                            title: prev.title || d.title,
+                            value: String(d.value),
+                            custom_milestones: newMilestones,
+                          }));
+                        }}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium border transition-colors cursor-pointer",
+                          isSelected
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                            : "bg-background hover:bg-muted text-foreground border-border",
+                        )}
+                      >
+                        <span>{d.title}</span>
+                        <span className="font-mono font-bold">
+                          {formatINR(d.value)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Title */}
             <div className="grid gap-1.5">
               <Label htmlFor="ct-title">Contract Title</Label>
@@ -3210,7 +3482,7 @@ export default function AccountsPage() {
                   onChange={(e) =>
                     setEditForm({ ...editForm, email: e.target.value })
                   }
-                  placeholder="accounts@client.com"
+                  placeholder="accounts@example.com"
                 />
               </div>
             </div>
@@ -3313,8 +3585,8 @@ export default function AccountsPage() {
             </DialogTitle>
             <DialogDescription>
               {invoiceForm.isPaid
-                ? "Generate official BN INTELHUB paid receipt with status Marked as PAID, UPI QR, and 18% GST breakdown."
-                : "Generate an official BN INTELHUB tax invoice with UPI QR, HSN/SAC code, and 18% GST breakdown."}
+                ? "Generate official paid receipt with status Marked as PAID, UPI QR, and 18% GST breakdown."
+                : "Generate an official tax invoice with UPI QR, HSN/SAC code, and 18% GST breakdown."}
             </DialogDescription>
           </DialogHeader>
 
@@ -3591,6 +3863,55 @@ export default function AccountsPage() {
               <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                 🏢 Client & Place of Supply
               </h4>
+              {/* Contact Person Selector for Phone & Email Auto-Fill */}
+              <div className="grid gap-1">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="inv-contact" className="text-xs text-muted-foreground">
+                    Contact Person (Auto-fills Phone & Email)
+                  </Label>
+                  {invoiceContactId && (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                      <Check className="size-3" /> Synced with Contact
+                    </span>
+                  )}
+                </div>
+                <Select
+                  value={invoiceContactId || "none"}
+                  onValueChange={(cid) => {
+                    if (cid === "none") {
+                      setInvoiceContactId("");
+                      return;
+                    }
+                    const contact = availableContacts.find((c) => c.id === cid);
+                    if (contact) {
+                      setInvoiceContactId(cid);
+                      setInvoiceForm((prev) => ({
+                        ...prev,
+                        clientPhone: contact.phone || prev.clientPhone,
+                        clientEmail: contact.email || prev.clientEmail,
+                      }));
+                      if (activeId && contact.account_id !== activeId) {
+                        updateContact(contact.id, { account_id: activeId }).then(() => {
+                          queryClient.invalidateQueries({ queryKey: ["account", activeId] });
+                          queryClient.invalidateQueries({ queryKey: ["accounts"] });
+                        });
+                      }
+                    }
+                  }}
+                >
+                  <SelectTrigger id="inv-contact" className="h-8 text-xs">
+                    <SelectValue placeholder="Select contact to auto-fill phone & email..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">-- Enter manually / No contact --</SelectItem>
+                    {availableContacts.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c.phone ? `(${c.phone})` : ""} {c.email ? `• ${c.email}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div className="grid gap-1">
                   <Label htmlFor="inv-pos" className="text-xs text-muted-foreground">
@@ -3676,7 +3997,7 @@ export default function AccountsPage() {
                         clientEmail: e.target.value,
                       })
                     }
-                    placeholder="billing@client.com"
+                    placeholder="billing@example.com"
                     className="h-8 text-xs"
                   />
                 </div>

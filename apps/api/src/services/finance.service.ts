@@ -5,6 +5,7 @@ import financeRepository, {
   InvoiceRow,
   PaymentRow,
 } from "../repositories/finance.repository";
+import accountsRepository from "../repositories/accounts.repository";
 import tenantBillingProfileRepository from "../repositories/tenant-billing-profile.repository";
 import logger from "../utils/logger";
 import engineService from "./engine.service";
@@ -85,11 +86,6 @@ class FinanceService {
       throw new NotFoundError("Contact not found");
     }
 
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-
     let number = body.number && String(body.number).trim() ? String(body.number).trim() : null;
     if (!number) {
       const allocated = await tenantBillingProfileRepository.allocateNextInvoiceNumber(tenantId);
@@ -97,8 +93,22 @@ class FinanceService {
         number = allocated.number;
       } else {
         const maxSuffix = await financeRepository.maxInvoiceNumberSuffix(tenantId);
-        const nextSeq = String(maxSuffix != null ? (maxSuffix % 100) + 1 : 1).padStart(2, "0");
-        number = `BNI-${yyyy}/${mm}${dd}${nextSeq}`;
+        number = `INV-${maxSuffix != null ? maxSuffix + 1 : Date.now()}`;
+      }
+    }
+
+    let invoiceDetails: unknown = body.details;
+    if (body.accountId) {
+      const acc = await accountsRepository.findById(body.accountId, tenantId);
+      if (acc?.project_name) {
+        if (!invoiceDetails || typeof invoiceDetails !== "object") {
+          invoiceDetails = { project_name: acc.project_name };
+        } else if (!(invoiceDetails as Record<string, unknown>).project_name) {
+          invoiceDetails = {
+            ...(invoiceDetails as Record<string, unknown>),
+            project_name: acc.project_name,
+          };
+        }
       }
     }
 
@@ -112,7 +122,7 @@ class FinanceService {
       tax,
       gateway: body.gateway ?? "Razorpay",
       due_at: dueAt,
-      details: body.details,
+      details: invoiceDetails,
     });
 
     engineService.audit(tenantId, actorId, "invoice.created", "invoice", invoice.id, {
@@ -214,26 +224,31 @@ class FinanceService {
   }
 
   // Deletes an invoice and any pending payment-link records. Paid/refunded
-  // invoices (and any invoice with a captured payment) are never deletable, so
-  // real revenue/refund history can't be erased.
-  async removeInvoice(tenantId: string, actorId: string, invoiceId: string) {
+  // invoices can be deleted when force is requested (e.g. manual receipts or
+  // invoices that need to be re-generated), cascading their associated payment rows.
+  async removeInvoice(
+    tenantId: string,
+    actorId: string,
+    invoiceId: string,
+    options?: { force?: boolean }
+  ) {
     const invoice = await financeRepository.findInvoiceById(invoiceId, tenantId);
     if (!invoice) throw new NotFoundError("Invoice not found");
-    if (invoice.status === "PAID" || invoice.status === "REFUNDED") {
+    if (!options?.force && (invoice.status === "PAID" || invoice.status === "REFUNDED")) {
       throw new BadRequestError("Paid or refunded invoices cannot be deleted");
     }
-    if (await financeRepository.hasSuccessfulPayment(invoiceId, tenantId)) {
+    if (!options?.force && (await financeRepository.hasSuccessfulPayment(invoiceId, tenantId))) {
       throw new BadRequestError("This invoice has a captured payment and cannot be deleted");
     }
 
     await db.transaction().execute(async (trx) => {
-      await financeRepository.deletePaymentsForInvoice(invoiceId, tenantId, trx);
-      const deleted = await financeRepository.deleteInvoice(invoiceId, tenantId, trx);
+      const deleted = await financeRepository.deleteInvoice(invoiceId, tenantId, actorId, trx);
       if (!deleted) throw new NotFoundError("Invoice not found");
     });
 
     engineService.audit(tenantId, actorId, "invoice.deleted", "invoice", invoiceId, {
       number: invoice.number,
+      force: options?.force ?? false,
     });
     return { ok: true };
   }

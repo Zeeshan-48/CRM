@@ -14,6 +14,7 @@ import {
   Trophy,
   Trash2,
   ChevronDown,
+  Pencil,
 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
@@ -30,6 +31,7 @@ import {
   listPipelines,
   loseDeal,
   moveDeal,
+  updateDeal,
   winDeal,
   type BoardResponse,
   type Deal,
@@ -129,6 +131,8 @@ export default function PipelinePage() {
   const [draggingId, setDraggingId] = React.useState<string | null>(null);
   const [newPipelineOpen, setNewPipelineOpen] = React.useState(false);
   const [newDealOpen, setNewDealOpen] = React.useState(false);
+  const [editingDealAmount, setEditingDealAmount] = React.useState(false);
+  const [dealAmountInput, setDealAmountInput] = React.useState("");
   const [lostOpen, setLostOpen] = React.useState(false);
   const [lostReason, setLostReason] = React.useState("");
   const [pipelineForm, setPipelineForm] = React.useState({
@@ -239,6 +243,19 @@ export default function PipelinePage() {
     onSuccess: (deal) => {
       toast.success(`Deal won: ${formatINR(deal.value)}`);
       invalidateBoard();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const updateDealMutation = useMutation({
+    mutationFn: ({ id, value }: { id: string; value: number }) =>
+      updateDeal(id, { value }),
+    onSuccess: (updated) => {
+      toast.success(`Negotiated deal value updated: ${formatINR(updated.value)}`);
+      setEditingDealAmount(false);
+      invalidateBoard();
+      queryClient.invalidateQueries({ queryKey: ["deal", updated.id] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -683,21 +700,91 @@ export default function PipelinePage() {
                   {activeDeal.title}
                 </SheetTitle>
                 <SheetDescription asChild>
-                  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                  <span className="font-medium tabular-nums text-foreground">
-                    {formatINR(activeDeal.value)}
-                  </span>
-                  <Badge
-                    className={cn(
-                      "",
-                      DEAL_STATUS_STYLES[activeDeal.status],
-                    )}
-                  >
-                    {activeDeal.status}
-                  </Badge>
-                  <span className="text-xs">
-                    created {timeAgo(activeDeal.created_at)}
-                  </span>
+                  <div className="mt-1 flex flex-col gap-1.5 text-sm text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {editingDealAmount ? (
+                        <div className="flex items-center gap-1.5 py-0.5">
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">
+                              ₹
+                            </span>
+                            <Input
+                              type="number"
+                              min="0"
+                              className="h-7 w-32 pl-5 text-xs font-semibold tabular-nums"
+                              value={dealAmountInput}
+                              onChange={(e) => setDealAmountInput(e.target.value)}
+                              placeholder="New amount"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  const val = Number(dealAmountInput);
+                                  if (!isNaN(val) && val >= 0) {
+                                    updateDealMutation.mutate({ id: activeDeal.id, value: val });
+                                  }
+                                } else if (e.key === "Escape") {
+                                  setEditingDealAmount(false);
+                                }
+                              }}
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            disabled={updateDealMutation.isPending}
+                            onClick={() => {
+                              const val = Number(dealAmountInput);
+                              if (!isNaN(val) && val >= 0) {
+                                updateDealMutation.mutate({ id: activeDeal.id, value: val });
+                              }
+                            }}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setEditingDealAmount(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold tabular-nums text-foreground">
+                            {formatINR(activeDeal.value)}
+                          </span>
+                          {activeDeal.status === "OPEN" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-brand"
+                              onClick={() => {
+                                setDealAmountInput(String(activeDeal.value));
+                                setEditingDealAmount(true);
+                              }}
+                              title="Negotiate / Edit Deal Amount"
+                            >
+                              <Pencil className="mr-1 size-3" />
+                              Edit
+                            </Button>
+                          ) : null}
+                        </div>
+                      )}
+
+                      <Badge
+                        className={cn(
+                          "",
+                          DEAL_STATUS_STYLES[activeDeal.status],
+                        )}
+                      >
+                        {activeDeal.status}
+                      </Badge>
+                      <span className="text-xs">
+                        created {timeAgo(activeDeal.created_at)}
+                      </span>
+                    </div>
                   </div>
                 </SheetDescription>
               </SheetHeader>
@@ -740,6 +827,18 @@ export default function PipelinePage() {
               <div className="mt-4 flex items-center gap-2">
                 {activeDeal.status === "OPEN" ? (
                   <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setDealAmountInput(String(activeDeal.value));
+                        setEditingDealAmount(true);
+                      }}
+                      title="Update Negotiated Deal Value"
+                    >
+                      <Pencil className="mr-1.5 size-3.5" />
+                      Negotiate Amount
+                    </Button>
                     <Button
                       size="sm"
                       className="bg-success text-white hover:bg-success/90"

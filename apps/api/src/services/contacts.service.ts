@@ -1,4 +1,5 @@
 import { contact_lifecycle } from "../db/enums";
+import { db } from "../db/connection";
 import { BadRequestError, NotFoundError } from "../errors";
 import { assertCanManageRecord } from "../utils/record-policy";
 import contactsRepository, { ContactRow } from "../repositories/contacts.repository";
@@ -183,6 +184,15 @@ class ContactsService {
     });
     if (!updated) throw new NotFoundError("Contact not found");
 
+    if (body.account_id !== undefined) {
+      await db
+        .updateTable("deals")
+        .set({ account_id: body.account_id ?? null })
+        .where("tenant_id", "=", tenantId)
+        .where("contact_id", "=", contactId)
+        .execute();
+    }
+
     engineService.audit(tenantId, actorId, "contact.updated", "contact", contactId, {});
     return updated;
   }
@@ -196,7 +206,7 @@ class ContactsService {
     // this leaves identities pointing at a record that no longer exists.
     await engagementService.purgePerson(tenantId, { contactId });
 
-    await contactsRepository.delete(contactId, tenantId);
+    await contactsRepository.delete(contactId, tenantId, actorId);
     engineService.audit(tenantId, actorId, "contact.deleted", "contact", contactId, {});
     return { ok: true };
   }

@@ -32,6 +32,7 @@ import {
   UserCheck,
   Users,
   Wallet,
+  Briefcase,
   type LucideIcon,
 } from "lucide-react";
 import * as React from "react";
@@ -153,11 +154,12 @@ function LeadJourney({
   onSelectStatus?: (status: string) => void;
   isUpdating?: boolean;
 }) {
+  const effectiveStatus = convertedContactId ? "CONVERTED" : status;
   const offTrack =
-    status === "NURTURE" || status === "NOT_INTERESTED" || status === "DISQUALIFIED";
+    effectiveStatus === "NURTURE" || effectiveStatus === "NOT_INTERESTED" || effectiveStatus === "DISQUALIFIED";
   const activeIdx = offTrack
     ? -1
-    : LEAD_JOURNEY.indexOf(status as (typeof LEAD_JOURNEY)[number]);
+    : LEAD_JOURNEY.indexOf(effectiveStatus as (typeof LEAD_JOURNEY)[number]);
 
   return (
     <div className="rounded-xl border bg-card p-4 sm:px-5">
@@ -175,21 +177,21 @@ function LeadJourney({
             <Badge
               className={cn(
                 "",
-                STATUS_STYLES[status] ?? "text-muted-foreground"
+                STATUS_STYLES[effectiveStatus] ?? "text-muted-foreground"
               )}
             >
-              {status === "NURTURE"
+              {effectiveStatus === "NURTURE"
                 ? "Nurturing"
-                : status === "NOT_INTERESTED"
+                : effectiveStatus === "NOT_INTERESTED"
                   ? "Not interested"
                   : "Disqualified"}
             </Badge>
           ) : null}
           {onSelectStatus ? (
             <Select
-              value={status}
+              value={effectiveStatus}
               onValueChange={(val) => onSelectStatus(val)}
-              disabled={isUpdating}
+              disabled={isUpdating || !!convertedContactId}
             >
               <SelectTrigger className="h-7 w-[160px] gap-1 border-dashed px-2 text-xs">
                 <SelectValue placeholder="Change status" />
@@ -215,8 +217,14 @@ function LeadJourney({
               <li className="flex shrink-0 flex-col items-center">
                 <button
                   type="button"
-                  onClick={() => onSelectStatus?.(step)}
-                  disabled={isUpdating}
+                  onClick={() => {
+                    if (step === "CONVERTED" && convertedContactId && onViewContact) {
+                      onViewContact();
+                    } else if (!convertedContactId) {
+                      onSelectStatus?.(step);
+                    }
+                  }}
+                  disabled={isUpdating || (!!convertedContactId && step !== "CONVERTED")}
                   className={cn(
                     "group flex flex-col items-center focus:outline-none disabled:pointer-events-none",
                     current ? "cursor-default" : "cursor-pointer"
@@ -914,8 +922,30 @@ export default function LeadDetailPage() {
   const [docOpen, setDocOpen] = React.useState(false);
   const [strategy, setStrategy] = React.useState("ROUND_ROBIN");
   const [manualOwner, setManualOwner] = React.useState("");
-  const [createDeal, setCreateDeal] = React.useState(true);
-  const [dealValue, setDealValue] = React.useState("50000");
+  const [convertForm, setConvertForm] = React.useState({
+    contactName: "",
+    email: "",
+    phone: "",
+    city: "",
+    createDeal: true,
+    dealTitle: "",
+    dealValue: "50000",
+  });
+
+  React.useEffect(() => {
+    if (convertOpen && lead) {
+      setConvertForm({
+        contactName: lead.name || "",
+        email: lead.email || "",
+        phone: lead.phone || "",
+        city: lead.city || "",
+        createDeal: true,
+        dealTitle: `${(lead.name || "Deal").split(" ")[0]} - Deal`,
+        dealValue: "50000",
+      });
+    }
+  }, [convertOpen, lead]);
+
   const [doc, setDoc] = React.useState({ name: "", doc_type: "file", url: "" });
 
   // Timeline type filter ("ALL" or a specific activity/channel badge).
@@ -945,17 +975,32 @@ export default function LeadDetailPage() {
   const convertMutation = useMutation({
     mutationFn: () =>
       convertLead(id, {
-        createDeal,
-        value: createDeal ? Number(dealValue) || undefined : undefined,
+        contactName: convertForm.contactName.trim() || undefined,
+        email: convertForm.email.trim() || undefined,
+        phone: convertForm.phone.trim() || undefined,
+        city: convertForm.city.trim() || undefined,
+        createDeal: convertForm.createDeal,
+        dealTitle: convertForm.createDeal
+          ? convertForm.dealTitle.trim() || undefined
+          : undefined,
+        value: convertForm.createDeal
+          ? Number(convertForm.dealValue) || undefined
+          : undefined,
       }),
     onSuccess: (result) => {
       toast.success(
         result.deal
-          ? `Converted to contact with a ${formatINR(result.deal.value)} deal`
-          : "Converted to contact"
+          ? `Converted to contact with a ${formatINR(result.deal.value)} deal!`
+          : "Converted to contact successfully!",
       );
       setConvertOpen(false);
       invalidateLead();
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["lead", id] });
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["deals-board"] });
+      queryClient.invalidateQueries({ queryKey: ["deals"] });
       navigate(`/contacts/${result.contact.id}`);
     },
     onError: (error: Error) => toast.error(error.message),
@@ -1088,6 +1133,8 @@ export default function LeadDetailPage() {
   const openDeals = lead.deals.filter((d) => d.status === "OPEN");
   const wonDeals = lead.deals.filter((d) => d.status === "WON");
   const openPipeline = openDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+  const wonPipeline = wonDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+  const effectiveStatus = lead.converted_contact_id ? "CONVERTED" : lead.status;
   const meetingsBooked = lead.calls.filter((c) => c.outcome === "MEETING_BOOKED").length;
   const ageDays = Math.max(
     0,
@@ -1129,10 +1176,10 @@ export default function LeadDetailPage() {
                   <Badge
                     className={cn(
                       "",
-                      STATUS_STYLES[lead.status] ?? "text-muted-foreground"
+                      STATUS_STYLES[effectiveStatus] ?? "text-muted-foreground"
                     )}
                   >
-                    {lead.status}
+                    {effectiveStatus}
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -1200,6 +1247,15 @@ export default function LeadDetailPage() {
                 <UserCheck className="size-4" />
                 Assign
               </Button>
+              {!lead.converted_contact_id && lead.status !== "CONVERTED" ? (
+                <Button
+                  size="sm"
+                  onClick={() => setConvertOpen(true)}
+                >
+                  <ArrowUpRight className="size-4" />
+                  Convert
+                </Button>
+              ) : null}
               {lead.converted_contact_id ? (
                 <Button
                   size="sm"
@@ -1210,16 +1266,7 @@ export default function LeadDetailPage() {
                   <ArrowUpRight className="size-4" />
                   View Contact
                 </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  disabled={lead.status === "CONVERTED"}
-                  onClick={() => setConvertOpen(true)}
-                >
-                  <ArrowUpRight className="size-4" />
-                  Convert
-                </Button>
-              )}
+              ) : null}
               <Button aria-label="Delete lead"
                 variant="outline"
                 size="sm"
@@ -1247,11 +1294,7 @@ export default function LeadDetailPage() {
           }}
           onSelectStatus={(s) => {
             if (s === "CONVERTED") {
-              if (lead.converted_contact_id) {
-                navigate(`/contacts/${lead.converted_contact_id}`);
-              } else {
-                setConvertOpen(true);
-              }
+              setConvertOpen(true);
             } else {
               updateStatusMutation.mutate(s);
             }
@@ -1272,14 +1315,16 @@ export default function LeadDetailPage() {
           icon={Activity}
         />
         <StatCard
-          label="Open pipeline"
-          value={formatINR(openPipeline)}
+          label={openDeals.length > 0 ? "Open pipeline" : wonDeals.length > 0 ? "Won pipeline" : "Pipeline"}
+          value={formatINR(openPipeline > 0 ? openPipeline : wonPipeline)}
           sub={
-            openDeals.length
+            openDeals.length && wonDeals.length
               ? `${openDeals.length} open · ${wonDeals.length} won`
               : wonDeals.length
-                ? `${wonDeals.length} won`
-                : "No deals yet"
+                ? `${wonDeals.length} won · closed`
+                : openDeals.length
+                  ? `${openDeals.length} open`
+                  : "No deals yet"
           }
           icon={Wallet}
         />
@@ -1698,42 +1743,145 @@ export default function LeadDetailPage() {
 
       {/* Convert dialog */}
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Convert to contact</DialogTitle>
+            <DialogTitle>Convert Lead to Contact & Deal</DialogTitle>
             <DialogDescription>
-              Creates a customer contact from this lead, optionally with an open deal.
+              Promotes this lead into an active customer contact, links a company account, and optionally opens a deal in the sales pipeline.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between border-t pt-3">
-              <div>
-                <p className="text-sm font-medium">Create a deal</p>
-                <p className="text-xs text-muted-foreground">
-                  Opens a deal in the default pipeline.
-                </p>
+
+          <div className="space-y-4 pt-2">
+            {/* Section 1: Contact Details */}
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Users className="size-3.5 text-brand" />
+                Contact Details
+              </p>
+              <div className="grid gap-2">
+                <div>
+                  <Label htmlFor="c-name" className="text-xs">Contact Name *</Label>
+                  <Input
+                    id="c-name"
+                    value={convertForm.contactName}
+                    onChange={(e) =>
+                      setConvertForm({ ...convertForm, contactName: e.target.value })
+                    }
+                    placeholder="e.g. John Doe"
+                    className="h-8 text-xs"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label htmlFor="c-email" className="text-xs">Email</Label>
+                    <Input
+                      id="c-email"
+                      type="email"
+                      value={convertForm.email}
+                      onChange={(e) =>
+                        setConvertForm({ ...convertForm, email: e.target.value })
+                      }
+                      placeholder="john@example.com"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="c-phone" className="text-xs">Phone</Label>
+                    <Input
+                      id="c-phone"
+                      value={convertForm.phone}
+                      onChange={(e) =>
+                        setConvertForm({ ...convertForm, phone: e.target.value })
+                      }
+                      placeholder="+91 98765 43210"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="c-city" className="text-xs">City</Label>
+                  <Input
+                    id="c-city"
+                    value={convertForm.city}
+                    onChange={(e) =>
+                      setConvertForm({ ...convertForm, city: e.target.value })
+                    }
+                    placeholder="e.g. Mumbai"
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
-              <Switch checked={createDeal} onCheckedChange={setCreateDeal} />
             </div>
-            {createDeal ? (
-              <div className="grid gap-1.5">
-                <Label htmlFor="deal-value">Deal value (INR)</Label>
-                <Input
-                  id="deal-value"
-                  type="number"
-                  min="0"
-                  value={dealValue}
-                  onChange={(e) => setDealValue(e.target.value)}
+
+            {/* Section 2: Deal Options */}
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    <Briefcase className="size-3.5 text-brand" />
+                    Pipeline Deal
+                  </p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Opens a deal in the sales pipeline with health and win prediction.
+                  </p>
+                </div>
+                <Switch
+                  checked={convertForm.createDeal}
+                  onCheckedChange={(checked) =>
+                    setConvertForm({ ...convertForm, createDeal: checked })
+                  }
                 />
               </div>
-            ) : null}
+
+              {convertForm.createDeal ? (
+                <div className="grid gap-2 pt-1 border-t">
+                  <div>
+                    <Label htmlFor="c-deal-title" className="text-xs">Deal Title</Label>
+                    <Input
+                      id="c-deal-title"
+                      value={convertForm.dealTitle}
+                      onChange={(e) =>
+                        setConvertForm({ ...convertForm, dealTitle: e.target.value })
+                      }
+                      placeholder="e.g. Website & Software Dev Deal"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="c-deal-value" className="text-xs">Deal Value / Amount (INR)</Label>
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground">
+                        ₹
+                      </span>
+                      <Input
+                        id="c-deal-value"
+                        type="number"
+                        min="0"
+                        value={convertForm.dealValue}
+                        onChange={(e) =>
+                          setConvertForm({ ...convertForm, dealValue: e.target.value })
+                        }
+                        className="h-8 pl-6 text-xs font-semibold tabular-nums"
+                        placeholder="50000"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setConvertOpen(false)}>
               Cancel
             </Button>
-            <Button loading={convertMutation.isPending} onClick={() => convertMutation.mutate()}>
-              Convert
+            <Button
+              loading={convertMutation.isPending}
+              disabled={!convertForm.contactName.trim()}
+              onClick={() => convertMutation.mutate()}
+            >
+              Convert Lead
             </Button>
           </DialogFooter>
         </DialogContent>

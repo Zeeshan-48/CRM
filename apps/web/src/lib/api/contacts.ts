@@ -118,6 +118,7 @@ export interface Invoice {
   issued_at: string | null;
   due_at: string | null;
   paid_at: string | null;
+  details?: any;
   created_at: string;
   updated_at: string;
 }

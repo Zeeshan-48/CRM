@@ -56,7 +56,10 @@ class LeadsRepository {
     const limit = Math.min(500, Math.max(1, params.limit ?? 100));
     const offset = (page - 1) * limit;
 
-    let base = db.selectFrom("leads").where("tenant_id", "=", tenantId);
+    let base = db
+      .selectFrom("leads")
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null);
     if (params.source) base = base.where("source", "=", params.source);
     // Tag match via jsonb containment: the lead's `tags` array must include the
     // requested tag. Used by the "CSV Import" filter (and any tag) in the UI.
@@ -117,6 +120,7 @@ class LeadsRepository {
       .selectAll()
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -129,6 +133,7 @@ class LeadsRepository {
       .selectFrom("leads")
       .selectAll()
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .where("email", "ilike", trimmed)
       .orderBy("created_at", "desc")
       .executeTakeFirst();
@@ -149,6 +154,7 @@ class LeadsRepository {
       .selectFrom("leads")
       .selectAll()
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .where((eb) => {
         const ors = [];
         if (e) ors.push(eb("email", "ilike", e));
@@ -165,6 +171,7 @@ class LeadsRepository {
       .selectFrom("leads")
       .selectAll()
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .where("id", "in", ids)
       .execute();
   }
@@ -174,6 +181,7 @@ class LeadsRepository {
       .selectFrom("leads")
       .select(db.fn.count<number>("id").as("n"))
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return Number(row?.n ?? 0);
   }
@@ -357,13 +365,25 @@ class LeadsRepository {
       .executeTakeFirst();
   }
 
-  async delete(id: string, tenantId: string): Promise<boolean> {
+  async delete(id: string, tenantId: string, actorId?: string): Promise<boolean> {
     const result = await db
-      .deleteFrom("leads")
+      .updateTable("leads")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("id", "=", id)
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    return Number(result?.numUpdatedRows ?? 0) > 0;
+  }
+
+  async restore(id: string, tenantId: string): Promise<boolean> {
+    const result = await db
+      .updateTable("leads")
+      .set({ deleted_at: null, deleted_by: null })
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
       .executeTakeFirst();
-    return Number(result?.numDeletedRows ?? 0) > 0;
+    return Number(result?.numUpdatedRows ?? 0) > 0;
   }
 
   // ---- Lead detail aggregate (activities, messages, deals, calls, docs) ----

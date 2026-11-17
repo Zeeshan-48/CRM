@@ -29,6 +29,7 @@ export const router = createBrowserRouter([
           { path: "/", ...page(() => import("@/pages/dashboard")) },
           { path: "/tenants", ...page(() => import("@/pages/tenants")) },
           { path: "/tenants/:id", ...page(() => import("@/pages/tenant-detail")) },
+          { path: "/vault", ...page(() => import("@/pages/tenant-vault")) },
           { path: "/plans", ...page(() => import("@/pages/plans")) },
           { path: "/billing", ...page(() => import("@/pages/billing")) },
           { path: "/operators", ...page(() => import("@/pages/operators")) },

@@ -522,9 +522,12 @@ export default function FinancePage() {
   });
 
   const handleDelete = async (invoice: Invoice) => {
+    const isPaid = invoice.status === "PAID" || invoice.status === "REFUNDED";
     const ok = await confirm({
       title: `Delete ${invoice.number}?`,
-      description: `This unpaid invoice (${formatINR(invoice.total)}) and any pending payment links will be permanently removed. This can't be undone.`,
+      description: isPaid
+        ? `This ${invoice.status.toLowerCase()} invoice/receipt (${formatINR(invoice.total)}) will be deleted. You can re-generate it cleanly anytime.`
+        : `This unpaid invoice (${formatINR(invoice.total)}) and any pending payment links will be permanently removed. This can't be undone.`,
       destructive: true,
       confirmText: "Delete",
     });

@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
-import type { Contact, Invoice } from "./contacts";
+import type { Contact } from "./contacts";
 import type { Deal } from "./deals";
+import type { Invoice } from "./finance";
 
 export type ContractStatus = "ACTIVE" | "INACTIVE" | "EXPIRED";
 export type BillingType = "ONE_TIME" | "RECURRING" | "HYBRID";
@@ -45,6 +46,8 @@ export interface Account {
 export interface AccountWithStats extends Account {
   contactsCount: number;
   openValue: number;
+  wonValue?: number;
+  contractValue?: number;
   hasOverdue?: boolean;
   hasAmcDue?: boolean;
   contractsCount?: number;

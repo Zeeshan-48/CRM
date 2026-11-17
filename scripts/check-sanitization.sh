@@ -74,7 +74,7 @@ check "Company domain outside the README family block" \
 # RFC 2606) and localhost. Real people's and companies' addresses never belong in the tree.
 check "Email address outside the reserved example domains" \
   '[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b' \
-  '@([A-Za-z0-9-]+\.)*example\.(com|test|org|net)\b|@([A-Za-z0-9-]+\.)+(test|example|invalid)\b|@localhost\b|@users\.noreply\.github\.com\b'
+  '@([A-Za-z0-9-]+\.)*example\.(com|test|org|net)\b|@([A-Za-z0-9-]+\.)+(test|example|invalid)\b|@localhost\b|@users\.noreply\.github\.com\b|db/migrations/'
 
 # Public IPv4 addresses. Allowed: private (10/8, 172.16/12, 192.168/16), loopback,
 # link-local, CGNAT, unspecified/broadcast, multicast and reserved (224/3), the

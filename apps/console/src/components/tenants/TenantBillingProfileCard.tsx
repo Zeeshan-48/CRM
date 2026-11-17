@@ -393,6 +393,47 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
               </span>
             </div>
 
+            {/* Official Company Logo Upload / Preview */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Official Company Logo</Label>
+              <div className="flex items-center gap-2">
+                <div className="h-9 w-24 border rounded bg-white flex items-center justify-center overflow-hidden shrink-0">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="h-full object-contain p-0.5" />
+                  ) : (
+                    <span className="text-[9px] text-muted-foreground">No Logo</span>
+                  )}
+                </div>
+                {canWrite ? (
+                  <label className="cursor-pointer">
+                    <Button variant="outline" size="sm" type="button" className="h-8 text-xs gap-1 pointer-events-none">
+                      <UploadCloud className="size-3" />
+                      Upload Logo
+                    </Button>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => handleFileUpload(e, setLogoUrl)}
+                    />
+                  </label>
+                ) : null}
+                {logoUrl && canWrite ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => setLogoUrl("")}
+                  >
+                    Reset
+                  </Button>
+                ) : null}
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                Appears on top-left of invoices & receipts
+              </span>
+            </div>
+
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium">GSTIN (15 Digits)</Label>

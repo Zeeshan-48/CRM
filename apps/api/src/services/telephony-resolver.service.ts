@@ -2,6 +2,7 @@ import config from "../config";
 import telephonyRepository from "../repositories/telephony.repository";
 import { decryptSecret } from "../utils/crypto";
 import type { ExotelCreds } from "./exotel.client";
+import type { PlivoCreds } from "./plivo.client";
 import type { TwilioCreds } from "./twilio.client";
 
 export interface ResolvedTelephony {
@@ -19,10 +20,24 @@ export interface ResolvedExotel {
   webhookToken: string;
 }
 
+export interface ResolvedPlivo {
+  mode: "tenant" | "default" | "none";
+  creds: PlivoCreds;
+  mainPhone: string;
+  webhookToken: string;
+}
+
 const EMPTY_EXOTEL: ResolvedExotel = {
   mode: "none",
   creds: { sid: "", apiKey: "", apiToken: "", subdomain: "" },
   mainExoPhone: "",
+  webhookToken: "",
+};
+
+const EMPTY_PLIVO: ResolvedPlivo = {
+  mode: "none",
+  creds: { authId: "", authToken: "" },
+  mainPhone: "",
   webhookToken: "",
 };
 
@@ -75,12 +90,54 @@ class TelephonyResolverService {
     return { mode: "none", creds: { accountSid: "", authToken: "", fromNumber: "" } };
   }
 
-  // Which provider the tenant's saved config selects. Twilio is the default so
-  // existing behavior (including the platform default Twilio tier for
-  // unconfigured tenants) is unchanged.
-  async activeProvider(tenantId: string): Promise<"EXOTEL" | "TWILIO"> {
+  // Which provider the tenant's saved config selects.
+  async activeProvider(tenantId: string): Promise<"PLIVO" | "EXOTEL" | "TWILIO"> {
     const cfg = await telephonyRepository.getConfig(tenantId);
-    return cfg?.provider === "EXOTEL" ? "EXOTEL" : "TWILIO";
+    if (cfg?.provider === "PLIVO") return "PLIVO";
+    if (cfg?.provider === "EXOTEL") return "EXOTEL";
+    return "TWILIO";
+  }
+
+  // Plivo: supports tenant BYO or fallback to platform-level default credentials.
+  async resolvePlivo(tenantId: string): Promise<ResolvedPlivo> {
+    const cfg = await telephonyRepository.getConfig(tenantId);
+    if (
+      cfg &&
+      cfg.provider === "PLIVO" &&
+      cfg.status === "ACTIVE" &&
+      cfg.account_sid &&
+      cfg.auth_token_encrypted &&
+      cfg.from_number &&
+      cfg.webhook_token
+    ) {
+      try {
+        return {
+          mode: "tenant",
+          creds: {
+            authId: cfg.account_sid,
+            authToken: decryptSecret(cfg.auth_token_encrypted),
+          },
+          mainPhone: cfg.from_number,
+          webhookToken: cfg.webhook_token,
+        };
+      } catch {
+        // Fall back to platform credentials if decryption fails
+      }
+    }
+
+    if (config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN && config.PLIVO_DEFAULT_FROM_NUMBER) {
+      return {
+        mode: "default",
+        creds: {
+          authId: config.PLIVO_AUTH_ID,
+          authToken: config.PLIVO_AUTH_TOKEN,
+        },
+        mainPhone: config.PLIVO_DEFAULT_FROM_NUMBER,
+        webhookToken: "platform_default_webhook_token",
+      };
+    }
+
+    return EMPTY_PLIVO;
   }
 
   // Exotel is BYO-only: there is no platform default account, so the tiers are

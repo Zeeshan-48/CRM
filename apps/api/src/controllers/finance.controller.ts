@@ -136,9 +136,12 @@ export const updateInvoice = async (req: Request, res: Response) => {
 
 export const deleteInvoice = async (req: Request, res: Response) => {
   const { tenantId, actorId } = ctx(req);
+  const force = req.query.force === "true" || (req.body && (req.body as any).force === true);
   sendSuccessResponse({
     res,
-    data: await financeService.removeInvoice(tenantId, actorId, String(req.params.id)),
+    data: await financeService.removeInvoice(tenantId, actorId, String(req.params.id), {
+      force,
+    }),
     message: "Invoice deleted",
   });
 };

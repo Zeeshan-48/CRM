@@ -29,6 +29,8 @@ export const updateDealSchema = z.object({
   title: optStr,
   value: optNumeric,
   owner_id: optStr,
+  account_id: optStr,
+  contact_id: optStr,
   expected_close_at: optStr,
   competitors: optUnknownArray,
   stakeholders: optUnknownArray,

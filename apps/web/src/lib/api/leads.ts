@@ -281,7 +281,20 @@ export const getLeadScore = (id: string) => apiGet<LeadScore>(`/leads/${id}/scor
 
 export const getLeadInsight = (id: string) => apiGet<LeadInsightResult>(`/leads/${id}/insight`);
 
-export const convertLead = (id: string, body: { createDeal: boolean; value?: number }) =>
+export const convertLead = (
+  id: string,
+  body: {
+    createDeal: boolean;
+    value?: number;
+    dealTitle?: string;
+    accountId?: string;
+    accountName?: string;
+    contactName?: string;
+    email?: string;
+    phone?: string;
+    city?: string;
+  }
+) =>
   apiPost<{ contact: Contact; deal: Deal | null }>(`/leads/${id}/convert`, body);
 
 export const deleteLead = (id: string) => apiDelete<{ ok: boolean }>(`/leads/${id}`);

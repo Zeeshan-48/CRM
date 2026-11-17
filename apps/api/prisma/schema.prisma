@@ -190,6 +190,8 @@ model roles {
   builtin     Boolean  @default(false)
   created_at  DateTime
   updated_at  DateTime
+  deleted_at  DateTime?
+  deleted_by  String?
   tenants     tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@unique([tenant_id, key])
@@ -227,6 +229,8 @@ model leads {
   last_activity_at     DateTime?
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   lead_documents       lead_documents[]
   tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
@@ -271,6 +275,8 @@ model contacts {
   last_activity_at       DateTime?
   created_at             DateTime
   updated_at             DateTime
+  deleted_at             DateTime?
+  deleted_by             String?
   tenants                tenants           @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id, lifecycle])
@@ -289,6 +295,8 @@ model accounts {
   departments       Json?
   created_at        DateTime
   updated_at        DateTime
+  deleted_at        DateTime?
+  deleted_by        String?
   account_contracts account_contracts[]
   tenants           tenants             @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
@@ -309,6 +317,8 @@ model account_contracts {
   end_at     DateTime?
   created_at DateTime
   updated_at DateTime
+  deleted_at DateTime?
+  deleted_by String?
   accounts   accounts        @relation(fields: [account_id], references: [id], onDelete: Cascade)
   tenants    tenants         @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
@@ -368,6 +378,8 @@ model deals {
   health_label      String?
   created_at        DateTime
   updated_at        DateTime
+  deleted_at        DateTime?
+  deleted_by        String?
   tenants           tenants     @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id, pipeline_id, stage_id])
@@ -600,6 +612,8 @@ model sla_policies {
   is_default           Boolean  @default(false)
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   tenants              tenants  @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id])
@@ -814,6 +828,8 @@ model invoices {
   paid_at    DateTime?
   created_at DateTime
   updated_at DateTime
+  deleted_at DateTime?
+  deleted_by String?
   tenants    tenants        @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
   payments   payments[]
 
@@ -1256,6 +1272,8 @@ model tenant_telephony {
   last_error           String?
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id])
@@ -1295,6 +1313,8 @@ model tenant_razorpay {
   last_error           String?
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id])
@@ -1312,6 +1332,8 @@ model tenant_stripe {
   last_error           String?
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   tenants              tenants          @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 
   @@index([tenant_id])
@@ -1643,6 +1665,8 @@ model platform_transactions {
   occurred_at          DateTime
   created_at           DateTime
   updated_at           DateTime
+  deleted_at           DateTime?
+  deleted_by           String?
   tenant_subscriptions tenant_subscriptions @relation(fields: [subscription_id], references: [id], onDelete: Cascade)
   tenants              tenants              @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 

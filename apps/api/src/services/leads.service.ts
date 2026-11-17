@@ -4,8 +4,6 @@ import { db } from "../db/connection";
 import type { lead_status } from "../db/enums";
 import { BadRequestError, ConflictError, NotFoundError } from "../errors";
 import identitiesRepository from "../repositories/identities.repository";
-import contactsRepository from "../repositories/contacts.repository";
-import dealsRepository from "../repositories/deals.repository";
 import leadsRepository, {
   BulkCreateLeadData,
   LeadRow,
@@ -67,7 +65,11 @@ const storedScore = (lead: LeadRow): LeadScore => {
   };
 };
 
-const withScore = (lead: LeadRow) => ({ ...lead, score: storedScore(lead) });
+const withScore = (lead: LeadRow) => ({
+  ...lead,
+  status: lead.converted_contact_id ? "CONVERTED" : lead.status,
+  score: storedScore(lead),
+});
 
 class LeadsService {
   // The Source filter/picker list: the built-in sources UNION whatever sources
@@ -404,10 +406,15 @@ class LeadsService {
     // A disqualified lead is always unassigned, clearing the owner here wins over
     // any owner_id in the body. Applies whether this update sets DISQUALIFIED or
     // the lead is already disqualified and other fields are being edited.
-    const nextStatus = body.status !== undefined ? body.status : existing.status;
+    const nextStatus = existing.converted_contact_id
+      ? "CONVERTED"
+      : body.status !== undefined
+        ? body.status
+        : existing.status;
     const forceUnassign = nextStatus === "DISQUALIFIED";
     const updated = await leadsRepository.update(leadId, tenantId, {
       ...rest,
+      status: nextStatus,
       ...(body.phone !== undefined ? { phone: normalizePhoneForStore(body.phone) } : {}),
       ...(socials !== undefined ? { socials: parseSocials(socials) ?? {} } : {}),
       ...(forceUnassign ? { owner_id: null } : {}),
@@ -833,39 +840,80 @@ class LeadsService {
     tenantId: string,
     actorId: string,
     leadId: string,
-    body: { createDeal?: boolean; value?: number }
+    body: {
+      createDeal?: boolean;
+      value?: number;
+      dealTitle?: string;
+      accountId?: string;
+      accountName?: string;
+      contactName?: string;
+      email?: string;
+      phone?: string;
+      city?: string;
+    }
   ) {
     const lead = await leadsRepository.findById(leadId, tenantId);
     if (!lead) throw new NotFoundError("Lead not found");
 
-    // Idempotency: If this lead was already converted, return existing records
-    if (lead.converted_contact_id) {
-      const existingContact = await contactsRepository.findById(lead.converted_contact_id, tenantId);
-      if (existingContact) {
-        let existingDeal = null;
-        if (lead.converted_deal_id) {
-          existingDeal = await dealsRepository.findDealById(lead.converted_deal_id, tenantId);
-        }
-        return { contact: existingContact, deal: existingDeal, alreadyConverted: true };
-      }
-    }
-
     const result = await db.transaction().execute(async (trx) => {
       const now = new Date();
 
-      // Deduplication: Check if a contact with this email or phone already exists
+      // Resolve or create account if accountId or accountName is specified
+      let accountId = body.accountId;
+      if (!accountId && body.accountName && body.accountName.trim()) {
+        const trimmed = body.accountName.trim();
+        const existingAcc = await trx
+          .selectFrom("accounts")
+          .select("id")
+          .where("tenant_id", "=", tenantId)
+          .where((eb) => eb(eb.fn("lower", ["name"]), "=", trimmed.toLowerCase()))
+          .executeTakeFirst();
+        if (existingAcc) {
+          accountId = existingAcc.id;
+        } else {
+          const newAcc = await trx
+            .insertInto("accounts")
+            .values({
+              id: ulid(),
+              tenant_id: tenantId,
+              name: trimmed,
+              city: body.city || lead.city || null,
+              created_at: now,
+              updated_at: now,
+            })
+            .returning("id")
+            .executeTakeFirstOrThrow();
+          accountId = newAcc.id;
+        }
+      }
+
+      const contactName = body.contactName?.trim() || lead.name;
+      const contactEmail = body.email !== undefined ? body.email : lead.email;
+      const contactPhone = body.phone !== undefined ? body.phone : lead.phone;
+      const contactCity = body.city !== undefined ? body.city : lead.city;
+
+      // Deduplication: Check if already linked, or matching contact with this email or phone
       let contact: any = null;
-      if (lead.email) {
+      if (lead.converted_contact_id) {
         contact = await trx
           .selectFrom("contacts")
           .selectAll()
           .where("tenant_id", "=", tenantId)
-          .where((eb) => eb(eb.fn("lower", ["email"]), "=", lead.email!.toLowerCase()))
+          .where("id", "=", lead.converted_contact_id)
           .executeTakeFirst();
       }
 
-      if (!contact && lead.phone) {
-        const normPhone = normalizePhoneForStore(lead.phone);
+      if (!contact && contactEmail) {
+        contact = await trx
+          .selectFrom("contacts")
+          .selectAll()
+          .where("tenant_id", "=", tenantId)
+          .where((eb) => eb(eb.fn("lower", ["email"]), "=", contactEmail.toLowerCase()))
+          .executeTakeFirst();
+      }
+
+      if (!contact && contactPhone) {
+        const normPhone = normalizePhoneForStore(contactPhone);
         if (normPhone) {
           contact = await trx
             .selectFrom("contacts")
@@ -877,37 +925,41 @@ class LeadsService {
       }
 
       if (contact) {
-        // Reuse existing contact! If it was still LEAD, promote to PROSPECT.
-        const shouldUpgrade = contact.lifecycle === "LEAD";
-        const needsLeadLink = !contact.converted_from_lead_id;
-        if (shouldUpgrade || needsLeadLink) {
-          contact = await trx
-            .updateTable("contacts")
-            .set({
-              lifecycle: shouldUpgrade ? "PROSPECT" : contact.lifecycle,
-              converted_from_lead_id: contact.converted_from_lead_id || lead.id,
-              updated_at: now,
-            })
-            .where("id", "=", contact.id)
-            .where("tenant_id", "=", tenantId)
-            .returningAll()
-            .executeTakeFirstOrThrow();
+        // Reuse and update contact details with supplied parameters
+        const patch: Record<string, unknown> = {
+          updated_at: now,
+          lifecycle: contact.lifecycle === "LEAD" ? "PROSPECT" : contact.lifecycle,
+          converted_from_lead_id: contact.converted_from_lead_id || lead.id,
+        };
+        if (contactName && contact.name !== contactName) patch.name = contactName;
+        if (contactEmail && contact.email !== contactEmail) patch.email = contactEmail;
+        if (contactPhone && contact.phone !== contactPhone) {
+          patch.phone = normalizePhoneForStore(contactPhone);
         }
+        if (contactCity && contact.city !== contactCity) patch.city = contactCity;
+        if (accountId && contact.account_id !== accountId) patch.account_id = accountId;
+
+        contact = await trx
+          .updateTable("contacts")
+          .set(patch)
+          .where("id", "=", contact.id)
+          .where("tenant_id", "=", tenantId)
+          .returningAll()
+          .executeTakeFirstOrThrow();
       } else {
         contact = await trx
           .insertInto("contacts")
           .values({
             id: ulid(),
             tenant_id: tenantId,
-            name: lead.name,
-            email: lead.email,
-            phone: lead.phone,
-            city: lead.city,
+            account_id: accountId || null,
+            name: contactName,
+            email: contactEmail,
+            phone: contactPhone ? normalizePhoneForStore(contactPhone) : null,
+            city: contactCity,
             owner_id: lead.owner_id,
             tags: JSON.stringify(parseStringArray(lead.tags)),
             socials: JSON.stringify(parseSocials(lead.socials) ?? {}),
-            // Conversion makes a PROSPECT; the contact only becomes a CUSTOMER
-            // once one of its deals is Won (see deals.service markContactAsCustomer).
             lifecycle: "PROSPECT",
             converted_from_lead_id: lead.id,
             last_activity_at: now,
@@ -918,18 +970,45 @@ class LeadsService {
           .executeTakeFirstOrThrow();
       }
 
+      if (!accountId && contact?.account_id) {
+        accountId = contact.account_id;
+      }
+
       let deal: any = null;
       if (body.createDeal) {
         // Check if an existing deal already exists for this lead
-        const existingDeal = await trx
-          .selectFrom("deals")
-          .selectAll()
-          .where("tenant_id", "=", tenantId)
-          .where("lead_id", "=", lead.id)
-          .executeTakeFirst();
+        let existingDeal: any = null;
+        if (lead.converted_deal_id) {
+          existingDeal = await trx
+            .selectFrom("deals")
+            .selectAll()
+            .where("tenant_id", "=", tenantId)
+            .where("id", "=", lead.converted_deal_id)
+            .executeTakeFirst();
+        }
+        if (!existingDeal) {
+          existingDeal = await trx
+            .selectFrom("deals")
+            .selectAll()
+            .where("tenant_id", "=", tenantId)
+            .where("lead_id", "=", lead.id)
+            .executeTakeFirst();
+        }
 
         if (existingDeal) {
-          deal = existingDeal;
+          const dealPatch: Record<string, unknown> = { updated_at: now };
+          if (body.dealTitle && body.dealTitle.trim()) dealPatch.title = body.dealTitle.trim();
+          if (body.value !== undefined && Number(body.value) > 0) dealPatch.value = Number(body.value);
+          if (accountId && existingDeal.account_id !== accountId) dealPatch.account_id = accountId;
+          if (contact.id && existingDeal.contact_id !== contact.id) dealPatch.contact_id = contact.id;
+
+          deal = await trx
+            .updateTable("deals")
+            .set(dealPatch)
+            .where("id", "=", existingDeal.id)
+            .where("tenant_id", "=", tenantId)
+            .returningAll()
+            .executeTakeFirstOrThrow();
         } else {
           const pipeline = await trx
             .selectFrom("pipelines")
@@ -950,11 +1029,6 @@ class LeadsService {
 
           const dealId = ulid();
           const value = body.value || 50000;
-          // Stored AI fields, computed the same way POST /deals computes them. A
-          // converted deal used to be inserted without them, so the pipeline board
-          // and forecast showed a blank health chip and a zero win probability for
-          // exactly the deals that came from a real qualified lead. No activities
-          // exist yet, so this is the stage-and-value baseline.
           const health = dealHealth(
             {
               id: dealId,
@@ -974,11 +1048,12 @@ class LeadsService {
               tenant_id: tenantId,
               pipeline_id: pipeline.id,
               stage_id: stage.id,
-              title: `${lead.name.split(" ")[0]} - Deal`,
+              title: body.dealTitle?.trim() || `${contactName.split(" ")[0]} - Deal`,
               value,
               currency: "INR",
               owner_id: lead.owner_id,
               lead_id: lead.id,
+              account_id: accountId || null,
               contact_id: contact.id,
               status: "OPEN",
               win_probability: health.winProbability,
@@ -997,7 +1072,7 @@ class LeadsService {
         .set({
           status: "CONVERTED",
           converted_contact_id: contact.id,
-          converted_deal_id: deal?.id ?? null,
+          converted_deal_id: deal?.id ?? lead.converted_deal_id ?? null,
           updated_at: now,
         })
         .where("id", "=", lead.id)
@@ -1041,7 +1116,7 @@ class LeadsService {
     // the lead intact and retryable rather than stranding its data.
     await engagementService.purgePerson(tenantId, { leadId });
 
-    await leadsRepository.delete(leadId, tenantId);
+    await leadsRepository.delete(leadId, tenantId, actorId);
     engineService.audit(tenantId, actorId, "lead.deleted", "lead", leadId);
     return { ok: true };
   }

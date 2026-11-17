@@ -169,8 +169,8 @@ export const createInvoice = (input: CreateInvoiceInput) =>
 export const updateInvoice = (id: string, input: UpdateInvoiceInput) =>
   apiPut<Invoice>(`/finance/invoices/${id}`, input);
 
-export const deleteInvoice = (id: string) =>
-  apiDelete<{ ok: boolean }>(`/finance/invoices/${id}`);
+export const deleteInvoice = (id: string, force = true) =>
+  apiDelete<{ ok: boolean }>(`/finance/invoices/${id}${force ? "?force=true" : ""}`);
 
 export const payInvoice = (id: string) =>
   apiPost<InvoiceActionResult>(`/finance/invoices/${id}/pay`);

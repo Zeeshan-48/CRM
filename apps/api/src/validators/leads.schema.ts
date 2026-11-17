@@ -75,4 +75,11 @@ export const assignLeadSchema = z.object({
 export const convertLeadSchema = z.object({
   createDeal: optBool,
   value: optNumeric,
+  dealTitle: optStr,
+  accountId: optStr,
+  accountName: optStr,
+  contactName: optStr,
+  email: optStr,
+  phone: optStr,
+  city: optStr,
 });

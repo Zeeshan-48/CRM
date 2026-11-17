@@ -57,13 +57,15 @@ export type account_contracts = {
   value: Generated<number>;
   status: Generated<contract_status>;
   billing_type: Generated<string>;
-  recurring_interval: string | null;
+  recurring_interval: Generated<string | null>;
   recurring_value: Generated<number>;
   milestones: Generated<unknown>;
   start_at: Timestamp | null;
   end_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type accounts = {
   id: string;
@@ -72,18 +74,20 @@ export type accounts = {
   industry: string | null;
   size: string | null;
   website: string | null;
-  project_name?: string | null;
+  project_name: string | null;
   owner_id: string | null;
   departments: unknown | null;
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  pincode?: string | null;
-  gstin?: string | null;
-  phone?: string | null;
-  email?: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  pincode: string | null;
+  gstin: string | null;
+  phone: string | null;
+  email: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type activities = {
   id: string;
@@ -340,6 +344,8 @@ export type contacts = {
   last_activity_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type conversations = {
   id: string;
@@ -394,6 +400,8 @@ export type deals = {
   health_label: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type email_domain_health_checks = {
   id: string;
@@ -549,14 +557,16 @@ export type invoices = {
   contact_id: string | null;
   amount: number;
   tax: Generated<number>;
+  details: Generated<unknown>;
   status: Generated<invoice_status>;
   gateway: string | null;
   issued_at: Timestamp | null;
   due_at: Timestamp | null;
   paid_at: Timestamp | null;
-  details?: Generated<unknown>;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type kb_articles = {
   id: string;
@@ -620,6 +630,8 @@ export type leads = {
   last_activity_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type meetings = {
   id: string;
@@ -759,6 +771,8 @@ export type platform_transactions = {
   occurred_at: Timestamp;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type platform_webhook_events = {
   id: string;
@@ -847,6 +861,8 @@ export type roles = {
   builtin: Generated<boolean>;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type saved_views = {
   id: string;
@@ -867,6 +883,8 @@ export type sla_policies = {
   is_default: Generated<boolean>;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type stages = {
   id: string;
@@ -908,61 +926,6 @@ export type telephony_numbers = {
   created_at: Timestamp;
   updated_at: Timestamp;
 };
-export type tenant_entitlements = {
-  id: string;
-  tenant_id: string;
-  code: string;
-  enabled: Generated<boolean>;
-  limit_value: number | null;
-  source: Generated<entitlement_source>;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-};
-export type tenant_razorpay = {
-  id: string;
-  tenant_id: string;
-  provider: Generated<string>;
-  key_id: string | null;
-  key_secret_encrypted: string | null;
-  status: Generated<telephony_status>;
-  verified_at: Timestamp | null;
-  last_error: string | null;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-};
-export type tenant_stripe = {
-  id: string;
-  tenant_id: string;
-  provider: Generated<string>;
-  secret_key_encrypted: string | null;
-  status: Generated<telephony_status>;
-  verified_at: Timestamp | null;
-  last_error: string | null;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-};
-export type tenant_subscriptions = {
-  id: string;
-  tenant_id: string;
-  plan_key: string;
-  gateway: string;
-  billing_interval: Generated<billing_interval>;
-  billing_mode: Generated<billing_mode>;
-  status: Generated<subscription_status>;
-  gateway_customer_id: string | null;
-  gateway_subscription_id: string | null;
-  checkout_url: string | null;
-  checkout_ref: string | null;
-  current_period_start: Timestamp | null;
-  current_period_end: Timestamp | null;
-  cancel_at_period_end: Generated<boolean>;
-  canceled_at: Timestamp | null;
-  grace_until: Timestamp | null;
-  amount: number;
-  currency: Generated<string>;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-};
 export type tenant_billing_profiles = {
   id: string;
   tenant_id: string;
@@ -998,6 +961,65 @@ export type tenant_billing_profiles = {
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 };
+export type tenant_entitlements = {
+  id: string;
+  tenant_id: string;
+  code: string;
+  enabled: Generated<boolean>;
+  limit_value: number | null;
+  source: Generated<entitlement_source>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
+export type tenant_razorpay = {
+  id: string;
+  tenant_id: string;
+  provider: Generated<string>;
+  key_id: string | null;
+  key_secret_encrypted: string | null;
+  status: Generated<telephony_status>;
+  verified_at: Timestamp | null;
+  last_error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
+};
+export type tenant_stripe = {
+  id: string;
+  tenant_id: string;
+  provider: Generated<string>;
+  secret_key_encrypted: string | null;
+  status: Generated<telephony_status>;
+  verified_at: Timestamp | null;
+  last_error: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
+};
+export type tenant_subscriptions = {
+  id: string;
+  tenant_id: string;
+  plan_key: string;
+  gateway: string;
+  billing_interval: Generated<billing_interval>;
+  billing_mode: Generated<billing_mode>;
+  status: Generated<subscription_status>;
+  gateway_customer_id: string | null;
+  gateway_subscription_id: string | null;
+  checkout_url: string | null;
+  checkout_ref: string | null;
+  current_period_start: Timestamp | null;
+  current_period_end: Timestamp | null;
+  cancel_at_period_end: Generated<boolean>;
+  canceled_at: Timestamp | null;
+  grace_until: Timestamp | null;
+  amount: number;
+  currency: Generated<string>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+};
 export type tenant_telephony = {
   id: string;
   tenant_id: string;
@@ -1013,6 +1035,8 @@ export type tenant_telephony = {
   last_error: string | null;
   created_at: Timestamp;
   updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+  deleted_by: string | null;
 };
 export type tenant_whatsapp = {
   id: string;

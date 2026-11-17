@@ -44,7 +44,11 @@ export interface UpdateContactData {
 
 class ContactsRepository {
   async list(tenantId: string, params: ContactsListParams = {}): Promise<ContactRow[]> {
-    let query = db.selectFrom("contacts").selectAll().where("tenant_id", "=", tenantId);
+    let query = db
+      .selectFrom("contacts")
+      .selectAll()
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null);
     if (params.lifecycle) query = query.where("lifecycle", "=", params.lifecycle);
     if (params.q) {
       const s = `%${params.q}%`;
@@ -66,6 +70,7 @@ class ContactsRepository {
       .selectAll()
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -130,13 +135,25 @@ class ContactsRepository {
       .executeTakeFirst();
   }
 
-  async delete(id: string, tenantId: string): Promise<boolean> {
+  async delete(id: string, tenantId: string, actorId?: string): Promise<boolean> {
     const result = await db
-      .deleteFrom("contacts")
+      .updateTable("contacts")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("id", "=", id)
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    return Number(result?.numUpdatedRows ?? 0) > 0;
+  }
+
+  async restore(id: string, tenantId: string): Promise<boolean> {
+    const result = await db
+      .updateTable("contacts")
+      .set({ deleted_at: null, deleted_by: null })
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
       .executeTakeFirst();
-    return Number(result?.numDeletedRows ?? 0) > 0;
+    return Number(result?.numUpdatedRows ?? 0) > 0;
   }
 
   // ---- 360 profile relations ----
@@ -187,6 +204,7 @@ class ContactsRepository {
         .selectAll("deals")
         .select("stages.name as stage_name")
         .where("deals.tenant_id", "=", tenantId)
+        .where("deals.deleted_at", "is", null)
         .where((eb) => {
           const ors = [eb("deals.contact_id", "=", contact.id)];
           if (contact.account_id) ors.push(eb("deals.account_id", "=", contact.account_id));
@@ -199,6 +217,7 @@ class ContactsRepository {
         .selectAll()
         .where("tenant_id", "=", tenantId)
         .where("contact_id", "=", contact.id)
+        .where("deleted_at", "is", null)
         .orderBy("created_at", "desc")
         .execute(),
       // Calls made to the contact, including pre-conversion calls on the lead.

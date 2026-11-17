@@ -82,16 +82,55 @@ class AccountsRepository {
             .select((seb) => seb.fn.count<number>("contacts.id").as("n"))
             .whereRef("contacts.account_id", "=", "accounts.id")
             .where("contacts.tenant_id", "=", tenantId)
+            .where("contacts.deleted_at", "is", null)
             .as("contactsCount"),
           eb
             .selectFrom("deals")
             .select((seb) => seb.fn.sum<number>("deals.value").as("s"))
-            .whereRef("deals.account_id", "=", "accounts.id")
             .where("deals.tenant_id", "=", tenantId)
             .where("deals.status", "=", "OPEN")
+            .where("deals.deleted_at", "is", null)
+            .where((deb) =>
+              deb.or([
+                deb("deals.account_id", "=", eb.ref("accounts.id")),
+                deb(
+                  "deals.contact_id",
+                  "in",
+                  eb
+                    .selectFrom("contacts")
+                    .select("contacts.id")
+                    .whereRef("contacts.account_id", "=", "accounts.id")
+                    .where("contacts.tenant_id", "=", tenantId)
+                    .where("contacts.deleted_at", "is", null)
+                ),
+              ])
+            )
             .as("openValue"),
+          eb
+            .selectFrom("deals")
+            .select((seb) => seb.fn.sum<number>("deals.value").as("s"))
+            .where("deals.tenant_id", "=", tenantId)
+            .where("deals.status", "=", "WON")
+            .where("deals.deleted_at", "is", null)
+            .where((deb) =>
+              deb.or([
+                deb("deals.account_id", "=", eb.ref("accounts.id")),
+                deb(
+                  "deals.contact_id",
+                  "in",
+                  eb
+                    .selectFrom("contacts")
+                    .select("contacts.id")
+                    .whereRef("contacts.account_id", "=", "accounts.id")
+                    .where("contacts.tenant_id", "=", tenantId)
+                    .where("contacts.deleted_at", "is", null)
+                ),
+              ])
+            )
+            .as("wonValue"),
         ])
         .where("accounts.tenant_id", "=", tenantId)
+        .where("accounts.deleted_at", "is", null)
         .orderBy("accounts.created_at", "asc")
         .orderBy("accounts.id", "asc")
         .execute(),
@@ -99,6 +138,7 @@ class AccountsRepository {
         .selectFrom("account_contracts")
         .selectAll()
         .where("tenant_id", "=", tenantId)
+        .where("deleted_at", "is", null)
         .execute(),
     ]);
 
@@ -117,9 +157,11 @@ class AccountsRepository {
       const contracts = contractsByAccount.get(account.id) || [];
       let hasOverdue = false;
       let hasAmcDue = false;
+      let contractValue = 0;
 
       for (const contract of contracts) {
         if (contract.status !== "ACTIVE") continue;
+        contractValue += Number(contract.value || 0);
         const milestones = (contract.milestones as any[]) || [];
         for (const m of milestones) {
           if (m.status !== "PAID" && m.due_at) {
@@ -136,7 +178,11 @@ class AccountsRepository {
 
       return {
         ...account,
+        contactsCount: Number(account.contactsCount || 0),
+        openValue: Number(account.openValue || 0),
+        wonValue: Number(account.wonValue || 0),
         contractsCount: contracts.length,
+        contractValue,
         hasOverdue,
         hasAmcDue,
       };
@@ -149,6 +195,7 @@ class AccountsRepository {
       .selectAll()
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -187,14 +234,45 @@ class AccountsRepository {
         .selectFrom("contacts")
         .selectAll()
         .where("tenant_id", "=", tenantId)
-        .where("account_id", "=", accountId)
+        .where("deleted_at", "is", null)
+        .where((eb) =>
+          eb.or([
+            eb("account_id", "=", accountId),
+            eb(
+              "id",
+              "in",
+              eb
+                .selectFrom("deals")
+                .select("contact_id")
+                .where("account_id", "=", accountId)
+                .where("tenant_id", "=", tenantId)
+                .where("deleted_at", "is", null)
+                .where("contact_id", "is not", null)
+            ),
+          ])
+        )
         .orderBy("created_at", "desc")
         .execute(),
       db
         .selectFrom("deals")
         .selectAll()
         .where("tenant_id", "=", tenantId)
-        .where("account_id", "=", accountId)
+        .where("deleted_at", "is", null)
+        .where((eb) =>
+          eb.or([
+            eb("account_id", "=", accountId),
+            eb(
+              "contact_id",
+              "in",
+              eb
+                .selectFrom("contacts")
+                .select("id")
+                .where("account_id", "=", accountId)
+                .where("tenant_id", "=", tenantId)
+                .where("deleted_at", "is", null)
+            ),
+          ])
+        )
         .orderBy("created_at", "desc")
         .execute(),
       db
@@ -202,6 +280,7 @@ class AccountsRepository {
         .selectAll()
         .where("tenant_id", "=", tenantId)
         .where("account_id", "=", accountId)
+        .where("deleted_at", "is", null)
         .orderBy("created_at", "desc")
         .execute(),
     ]);
@@ -322,6 +401,7 @@ class AccountsRepository {
       .selectAll()
       .where("tenant_id", "=", tenantId)
       .where("account_id", "=", accountId)
+      .where("deleted_at", "is", null)
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .execute();
@@ -383,25 +463,46 @@ class AccountsRepository {
       .executeTakeFirst();
   }
 
-  // Deletes the account and its contracts (FK cascade). Contacts/deals/invoices
-  // reference the account without a DB FK, so their account_id is cleared first
-  // to avoid dangling links in the UI.
-  async delete(id: string, tenantId: string): Promise<boolean> {
+  // Soft-deletes the account and its contracts. Relationships to contacts/deals/invoices
+  // are preserved so restoring the account re-links them seamlessly.
+  async delete(id: string, tenantId: string, actorId?: string): Promise<boolean> {
+    const now = new Date();
     return db.transaction().execute(async (trx) => {
-      for (const table of ["contacts", "deals", "invoices"] as const) {
-        await trx
-          .updateTable(table)
-          .set({ account_id: null })
-          .where("account_id", "=", id)
-          .where("tenant_id", "=", tenantId)
-          .execute();
-      }
+      await trx
+        .updateTable("account_contracts")
+        .set({ deleted_at: now, deleted_by: actorId ?? null })
+        .where("account_id", "=", id)
+        .where("tenant_id", "=", tenantId)
+        .where("deleted_at", "is", null)
+        .execute();
+
       const result = await trx
-        .deleteFrom("accounts")
+        .updateTable("accounts")
+        .set({ deleted_at: now, deleted_by: actorId ?? null })
+        .where("id", "=", id)
+        .where("tenant_id", "=", tenantId)
+        .where("deleted_at", "is", null)
+        .executeTakeFirst();
+      return Number(result?.numUpdatedRows ?? 0) > 0;
+    });
+  }
+
+  async restore(id: string, tenantId: string): Promise<boolean> {
+    return db.transaction().execute(async (trx) => {
+      await trx
+        .updateTable("account_contracts")
+        .set({ deleted_at: null, deleted_by: null })
+        .where("account_id", "=", id)
+        .where("tenant_id", "=", tenantId)
+        .execute();
+
+      const result = await trx
+        .updateTable("accounts")
+        .set({ deleted_at: null, deleted_by: null })
         .where("id", "=", id)
         .where("tenant_id", "=", tenantId)
         .executeTakeFirst();
-      return Number(result?.numDeletedRows ?? 0) > 0;
+      return Number(result?.numUpdatedRows ?? 0) > 0;
     });
   }
 
@@ -467,15 +568,33 @@ class AccountsRepository {
   async deleteContract(
     contractId: string,
     accountId: string,
+    tenantId: string,
+    actorId?: string
+  ): Promise<boolean> {
+    const result = await db
+      .updateTable("account_contracts")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("id", "=", contractId)
+      .where("account_id", "=", accountId)
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    return Number(result?.numUpdatedRows ?? 0) > 0;
+  }
+
+  async restoreContract(
+    contractId: string,
+    accountId: string,
     tenantId: string
   ): Promise<boolean> {
     const result = await db
-      .deleteFrom("account_contracts")
+      .updateTable("account_contracts")
+      .set({ deleted_at: null, deleted_by: null })
       .where("id", "=", contractId)
       .where("account_id", "=", accountId)
       .where("tenant_id", "=", tenantId)
       .executeTakeFirst();
-    return Number(result?.numDeletedRows ?? 0) > 0;
+    return Number(result?.numUpdatedRows ?? 0) > 0;
   }
 }
 

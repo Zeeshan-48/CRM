@@ -1,4 +1,5 @@
 import {
+  Archive,
   Building2,
   Layers,
   LayoutDashboard,
@@ -29,6 +30,7 @@ export const NAV_GROUPS: NavGroup[] = [
     group: "Platform",
     items: [
       { label: "Tenants", path: "/tenants", icon: Building2 },
+      { label: "Tenant Vault", path: "/vault", icon: Archive },
       { label: "Plans", path: "/plans", icon: Layers },
       { label: "Billing", path: "/billing", icon: Wallet },
     ],

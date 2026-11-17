@@ -11,6 +11,7 @@ class RolesRepository {
       .selectFrom("roles")
       .selectAll()
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .orderBy("created_at", "asc")
       .execute();
   }
@@ -21,6 +22,7 @@ class RolesRepository {
       .selectAll()
       .where("tenant_id", "=", tenantId)
       .where("key", "=", key)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -64,13 +66,25 @@ class RolesRepository {
       .executeTakeFirst();
   }
 
-  async delete(tenantId: string, key: string): Promise<number> {
+  async delete(tenantId: string, key: string, actorId?: string): Promise<number> {
     const res = await db
-      .deleteFrom("roles")
+      .updateTable("roles")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("tenant_id", "=", tenantId)
+      .where("key", "=", key)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    return Number(res?.numUpdatedRows ?? 0);
+  }
+
+  async restore(tenantId: string, key: string): Promise<number> {
+    const res = await db
+      .updateTable("roles")
+      .set({ deleted_at: null, deleted_by: null })
       .where("tenant_id", "=", tenantId)
       .where("key", "=", key)
       .executeTakeFirst();
-    return Number(res.numDeletedRows ?? 0);
+    return Number(res?.numUpdatedRows ?? 0);
   }
 }
 

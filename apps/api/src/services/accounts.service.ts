@@ -33,10 +33,11 @@ const asDate = (value: unknown, field: string): Date | null => {
 class AccountsService {
   async list(tenantId: string) {
     const rows = await accountsRepository.listWithStats(tenantId);
-    return rows.map(({ contactsCount, openValue, hasOverdue, hasAmcDue, contractsCount, ...account }) => ({
+    return rows.map(({ contactsCount, openValue, contractValue, hasOverdue, hasAmcDue, contractsCount, ...account }) => ({
       ...account,
       contactsCount: Number(contactsCount ?? 0),
       openValue: Number(openValue ?? 0),
+      contractValue: Number(contractValue ?? 0),
       hasOverdue: Boolean(hasOverdue),
       hasAmcDue: Boolean(hasAmcDue),
       contractsCount: Number(contractsCount ?? 0),
@@ -193,7 +194,7 @@ class AccountsService {
     const account = await accountsRepository.findById(accountId, tenantId);
     if (!account) throw new NotFoundError("Account not found");
     assertCanManageRecord(actorId, actorRole, account.owner_id, "delete", "account");
-    await accountsRepository.delete(accountId, tenantId);
+    await accountsRepository.delete(accountId, tenantId, actorId);
     engineService.audit(tenantId, actorId, "account.deleted", "account", accountId, {});
     return { ok: true };
   }
@@ -248,7 +249,7 @@ class AccountsService {
   ) {
     const contract = await accountsRepository.findContractById(contractId, accountId, tenantId);
     if (!contract) throw new NotFoundError("Contract not found");
-    await accountsRepository.deleteContract(contractId, accountId, tenantId);
+    await accountsRepository.deleteContract(contractId, accountId, tenantId, actorId);
     engineService.audit(tenantId, actorId, "account.contract_deleted", "account", accountId, {
       contractId,
     });

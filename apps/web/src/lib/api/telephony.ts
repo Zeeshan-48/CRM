@@ -4,7 +4,7 @@
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 
 export type TelephonyStatus = "PENDING" | "ACTIVE" | "DISABLED";
-export type TelephonyProvider = "TWILIO" | "EXOTEL";
+export type TelephonyProvider = "TWILIO" | "EXOTEL" | "PLIVO";
 
 export interface TelephonyConfig {
   configured: boolean;
@@ -22,7 +22,7 @@ export interface TelephonyConfig {
   api_key_hint?: string | null;
   /** Exotel API subdomain (api.in.exotel.com for Indian accounts). */
   subdomain: string | null;
-  /** Path token for the public Exotel webhook URLs the admin pastes into their flow. */
+  /** Path token for the public Exotel/Plivo webhook URLs the admin pastes into their flow. */
   webhook_token: string | null;
   verified_at: string | null;
   last_error: string | null;
@@ -30,6 +30,7 @@ export interface TelephonyConfig {
   defaultFrom: string | null;
   simulated: boolean;
   exotelSimulated: boolean;
+  plivoSimulated?: boolean;
 }
 
 /**

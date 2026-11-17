@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ArrowLeft,
   Building2,
   Loader2,
@@ -318,6 +319,12 @@ export default function TenantDetailPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="gap-1.5 border-dashed">
+              <Link to={`/vault?tenantId=${tenant.id}`}>
+                <Archive className="size-3.5 text-brand" />
+                Open Tenant Vault
+              </Link>
+            </Button>
             <StatusBadge status={tenant.status} />
             {tenant.plan_key ? (
               <Badge variant="brand" className="font-mono text-[11px]">

@@ -29,6 +29,8 @@ export interface UpdateDealData {
   title?: string;
   value?: number;
   owner_id?: string | null;
+  account_id?: string | null;
+  contact_id?: string | null;
   pipeline_id?: string;
   stage_id?: string;
   status?: deal_status;
@@ -175,6 +177,7 @@ class DealsRepository {
       .selectAll()
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -184,6 +187,7 @@ class DealsRepository {
       .selectAll()
       .where("tenant_id", "=", tenantId)
       .where("pipeline_id", "=", pipelineId)
+      .where("deleted_at", "is", null)
       .orderBy("created_at", "desc")
       .execute();
   }
@@ -226,6 +230,8 @@ class DealsRepository {
       "title",
       "value",
       "owner_id",
+      "account_id",
+      "contact_id",
       "pipeline_id",
       "stage_id",
       "status",
@@ -251,13 +257,25 @@ class DealsRepository {
       .executeTakeFirst();
   }
 
-  async deleteDeal(id: string, tenantId: string): Promise<boolean> {
+  async deleteDeal(id: string, tenantId: string, actorId?: string): Promise<boolean> {
     const result = await db
-      .deleteFrom("deals")
+      .updateTable("deals")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("id", "=", id)
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
+      .executeTakeFirst();
+    return Number(result?.numUpdatedRows ?? 0) > 0;
+  }
+
+  async restoreDeal(id: string, tenantId: string): Promise<boolean> {
+    const result = await db
+      .updateTable("deals")
+      .set({ deleted_at: null, deleted_by: null })
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
       .executeTakeFirst();
-    return Number(result?.numDeletedRows ?? 0) > 0;
+    return Number(result?.numUpdatedRows ?? 0) > 0;
   }
 
   async dealActivities(tenantId: string, dealId: string): Promise<DealActivityRow[]> {
@@ -283,6 +301,7 @@ class DealsRepository {
       ])
       .where("tenant_id", "=", tenantId)
       .where("status", "=", "OPEN")
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
 
     return {

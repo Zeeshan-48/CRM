@@ -54,6 +54,8 @@ export interface UpdateDealBody {
   title?: string;
   value?: unknown;
   owner_id?: string | null;
+  account_id?: string | null;
+  contact_id?: string | null;
   expected_close_at?: string | null;
   competitors?: unknown;
   stakeholders?: unknown;
@@ -217,6 +219,8 @@ class DealsService {
       title: typeof body.title === "string" ? body.title : undefined,
       value: body.value !== undefined ? toMoney(body.value) : undefined,
       owner_id: body.owner_id !== undefined ? body.owner_id : undefined,
+      account_id: body.account_id !== undefined ? body.account_id : undefined,
+      contact_id: body.contact_id !== undefined ? body.contact_id : undefined,
       expected_close_at: toDateInput(body.expected_close_at, "expected_close_at"),
       competitors: toArrayInput(body.competitors, "competitors"),
       stakeholders: toArrayInput(body.stakeholders, "stakeholders"),
@@ -230,7 +234,7 @@ class DealsService {
     const deal = await dealsRepository.findDealById(dealId, tenantId);
     if (!deal) throw new NotFoundError("Deal not found");
     assertCanManageRecord(actorId, actorRole, deal.owner_id, "delete", "deal");
-    await dealsRepository.deleteDeal(dealId, tenantId);
+    await dealsRepository.deleteDeal(dealId, tenantId, actorId);
     engineService.audit(tenantId, actorId, "deal.deleted", "deal", dealId, {});
     return { ok: true };
   }

@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   PhoneCall,
@@ -12,6 +13,7 @@ import { Link } from "react-router-dom";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { ExotelConnectionCard } from "@/components/telephony/ExotelConnectionCard";
+import { PlivoConnectionCard } from "@/components/telephony/PlivoConnectionCard";
 import { NumbersSection } from "@/components/telephony/NumbersSection";
 import { RecordingPlayer } from "@/components/telephony/RecordingPlayer";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +92,12 @@ export default function TelephonyPage() {
   const calls = callsQuery.data ?? [];
   const liveCalls = calls.filter((c) => describeCall(c.call_status).live).length;
 
+  const [activeProviderTab, setActiveProviderTab] = React.useState<"PLIVO" | "EXOTEL">("PLIVO");
+  React.useEffect(() => {
+    if (cfg?.provider === "EXOTEL") setActiveProviderTab("EXOTEL");
+    else if (cfg?.provider === "PLIVO") setActiveProviderTab("PLIVO");
+  }, [cfg?.provider]);
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -105,9 +113,40 @@ export default function TelephonyPage() {
         </Card>
       ) : (
         <>
+          {/* Provider Selection Tabs */}
+          <div className="flex flex-wrap items-center gap-2 border-b pb-3">
+            <Button
+              type="button"
+              size="sm"
+              variant={activeProviderTab === "PLIVO" ? "default" : "outline"}
+              onClick={() => setActiveProviderTab("PLIVO")}
+              className="gap-2 font-medium"
+            >
+              <span>Plivo (Recommended - Low Cost)</span>
+              {cfg?.provider === "PLIVO" && cfg?.status === "ACTIVE" ? (
+                <Badge variant="success" className="px-1.5 py-0 text-[10px]">Connected</Badge>
+              ) : null}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={activeProviderTab === "EXOTEL" ? "default" : "outline"}
+              onClick={() => setActiveProviderTab("EXOTEL")}
+              className="gap-2 font-medium"
+            >
+              <span>Exotel</span>
+              {cfg?.provider === "EXOTEL" && cfg?.status === "ACTIVE" ? (
+                <Badge variant="success" className="px-1.5 py-0 text-[10px]">Connected</Badge>
+              ) : null}
+            </Button>
+          </div>
 
           <section className="reveal" style={{ animationDelay: "40ms" }}>
-            <ExotelConnectionCard cfg={cfg} />
+            {activeProviderTab === "PLIVO" ? (
+              <PlivoConnectionCard cfg={cfg} />
+            ) : (
+              <ExotelConnectionCard cfg={cfg} />
+            )}
           </section>
 
           {/* ExoPhone pool */}

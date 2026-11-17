@@ -9,6 +9,7 @@ import metricsRouter from "./metrics.route";
 import operatorsRouter from "./operators.route";
 import plansRouter from "./plans.route";
 import tenantsRouter from "./tenants.route";
+import vaultRouter from "./vault.route";
 
 const rootRouter = Router();
 
@@ -25,5 +26,6 @@ A("/tenants", tenantsRouter);
 A("/metrics", metricsRouter);
 A("/audit", auditRouter);
 A("/billing", billingRouter);
+A("/vault", vaultRouter);
 
 export default rootRouter;

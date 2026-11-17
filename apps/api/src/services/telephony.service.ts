@@ -9,6 +9,7 @@ import { normalizePhone } from "../utils/phone";
 import callIntelligenceService from "./call-intelligence.service";
 import engineService from "./engine.service";
 import exotelClient, { EXOTEL_SUBDOMAINS } from "./exotel.client";
+import plivoClient from "./plivo.client";
 import storageService from "./storage.service";
 import telephonyResolverService from "./telephony-resolver.service";
 import telephonyRoutingService from "./telephony-routing.service";
@@ -43,21 +44,20 @@ class TelephonyService {
       auth_token_set: !!cfg?.auth_token_encrypted,
       verified_at: cfg?.verified_at ?? null,
       last_error: cfg?.last_error ?? null,
-      // Which provider the saved row selects. TWILIO when unconfigured so the
-      // existing UI defaults hold.
-      provider: cfg?.provider === "EXOTEL" ? "EXOTEL" : "TWILIO",
+      // Which provider the saved row selects. PLIVO, EXOTEL, or TWILIO.
+      provider: (cfg?.provider === "EXOTEL" ? "EXOTEL" : cfg?.provider === "PLIVO" ? "PLIVO" : "TWILIO") as "PLIVO" | "EXOTEL" | "TWILIO",
       subdomain: cfg?.subdomain ?? null,
       api_key_set: !!cfg?.api_key_encrypted,
       // The token is not a secret in the credentials sense: it only appears in
-      // webhook URLs the admin must copy into their Exotel flow.
+      // webhook URLs the admin must copy into their provider flow.
       webhook_token: cfg?.webhook_token ?? null,
       // The platform default tier, used when the tenant has no active config.
       // Simulated mode also counts as "available" (calls work, none are real).
-      // Twilio-only: Exotel is BYO per tenant.
       defaultAvailable: twilioClient.isDefaultLive() || twilioClient.isSimulated(),
       defaultFrom: config.TWILIO_DEFAULT_FROM_NUMBER || null,
       simulated: twilioClient.isSimulated(),
       exotelSimulated: exotelClient.isSimulated(),
+      plivoSimulated: plivoClient.isSimulated(),
     };
   }
 
@@ -67,7 +67,10 @@ class TelephonyService {
     body: {
       provider?: string;
       accountSid?: string;
+      authId?: string;
+      sid?: string;
       authToken?: string;
+      apiToken?: string;
       fromNumber?: string;
       apiKey?: string;
       subdomain?: string;
@@ -79,17 +82,19 @@ class TelephonyService {
     const existing = await telephonyRepository.getConfig(tenantId);
     const provider =
       String(body.provider ?? "").trim().toUpperCase() ||
-      (existing?.provider === "EXOTEL" ? "EXOTEL" : "TWILIO");
-    if (provider !== "TWILIO" && provider !== "EXOTEL") {
-      throw new BadRequestError("provider must be TWILIO or EXOTEL");
+      (existing?.provider ?? "PLIVO");
+    if (provider !== "TWILIO" && provider !== "EXOTEL" && provider !== "PLIVO") {
+      throw new BadRequestError("provider must be PLIVO, EXOTEL, or TWILIO");
     }
     // Switching provider means the stored secrets belong to the OTHER provider;
     // partial-update semantics only apply within the same provider.
     const samProvider = existing?.provider === provider ? existing : undefined;
 
-    const accountSid = String(body.accountSid ?? "").trim() || (samProvider?.account_sid ?? "");
+    const accountSid =
+      String(body.accountSid ?? body.authId ?? body.sid ?? "").trim() ||
+      (samProvider?.account_sid ?? "");
     const fromNumber = normalizePhone(body.fromNumber) || (samProvider?.from_number ?? "");
-    const rawToken = String(body.authToken ?? "").trim();
+    const rawToken = String(body.authToken ?? body.apiToken ?? "").trim();
     const authTokenEncrypted = rawToken
       ? encryptSecret(rawToken)
       : (samProvider?.auth_token_encrypted ?? "");
@@ -98,6 +103,8 @@ class TelephonyService {
       throw new BadRequestError(
         provider === "EXOTEL"
           ? "sid, apiToken and fromNumber are required"
+          : provider === "PLIVO"
+          ? "authId, authToken and fromNumber are required"
           : "accountSid, authToken and fromNumber are required"
       );
     }
@@ -129,10 +136,10 @@ class TelephonyService {
       api_key_encrypted: apiKeyEncrypted,
       subdomain,
       // Minted once and preserved forever after: the tenant pastes webhook URLs
-      // containing this token into their Exotel flow, so it must never churn on
+      // containing this token into their Exotel/Plivo flow, so it must never churn on
       // an ordinary re-save.
       webhook_token:
-        provider === "EXOTEL"
+        provider === "EXOTEL" || provider === "PLIVO"
           ? existing?.webhook_token ?? crypto.randomBytes(24).toString("hex")
           : existing?.webhook_token ?? null,
     });
@@ -147,8 +154,16 @@ class TelephonyService {
     const cfg = await telephonyRepository.getConfig(tenantId);
     if (!cfg || !cfg.account_sid || !cfg.auth_token_encrypted || !cfg.from_number) {
       throw new BadRequestError(
-        cfg?.provider === "EXOTEL" ? "Add Exotel credentials first" : "Add Twilio credentials first"
+        cfg?.provider === "EXOTEL"
+          ? "Add Exotel credentials first"
+          : cfg?.provider === "PLIVO"
+          ? "Add Plivo credentials first"
+          : "Add Twilio credentials first"
       );
+    }
+
+    if (cfg.provider === "PLIVO") {
+      return this.validatePlivo(tenantId, actorId, cfg);
     }
 
     if (cfg.provider === "EXOTEL") {
@@ -244,6 +259,58 @@ class TelephonyService {
     return this.getConfig(tenantId);
   }
 
+  private async validatePlivo(
+    tenantId: string,
+    actorId: string,
+    cfg: NonNullable<Awaited<ReturnType<typeof telephonyRepository.getConfig>>>
+  ) {
+    let authToken = "";
+    try {
+      authToken = cfg.auth_token_encrypted ? decryptSecret(cfg.auth_token_encrypted) : "";
+    } catch {
+      // empty creds
+    }
+
+    const result = await plivoClient.validateCredentials({
+      authId: cfg.account_sid ?? "",
+      authToken,
+    });
+    if (!result.ok) {
+      await telephonyRepository.updateStatus(tenantId, {
+        status: "PENDING",
+        last_error: result.error ?? "Invalid Plivo credentials",
+      });
+      return this.getConfig(tenantId);
+    }
+
+    if (cfg.from_number) {
+      const existing = await telephonyNumbersRepository.findByPhone(tenantId, cfg.from_number);
+      if (!existing) {
+        try {
+          await telephonyNumbersRepository.create({
+            tenant_id: tenantId,
+            phone: cfg.from_number,
+            label: "Plivo Main number",
+            kind: "MAIN",
+            assigned_user_id: null,
+          });
+        } catch {
+          // Unique race condition
+        }
+      }
+    }
+
+    await telephonyRepository.updateStatus(tenantId, {
+      status: "ACTIVE",
+      verified_at: new Date(),
+      last_error: null,
+    });
+    engineService.audit(tenantId, actorId, "telephony.validated", "tenant_telephony", cfg.id, {
+      provider: "PLIVO",
+    });
+    return this.getConfig(tenantId);
+  }
+
   async remove(tenantId: string, actorId: string) {
     await telephonyRepository.removeConfig(tenantId);
     engineService.audit(tenantId, actorId, "telephony.config_removed", "tenant_telephony", tenantId, {});
@@ -291,6 +358,9 @@ class TelephonyService {
     }
 
     const provider = await telephonyResolverService.activeProvider(tenantId);
+    if (provider === "PLIVO") {
+      return this.placePlivoCall({ tenantId, actorId, leadId, contactId, agentPhone, leadPhone });
+    }
     if (provider === "EXOTEL") {
       return this.placeExotelCall({ tenantId, actorId, leadId, contactId, agentPhone, leadPhone });
     }
@@ -334,6 +404,95 @@ class TelephonyService {
       simulated: placed.simulated,
     });
     return { ...callRow, mode: resolved.mode, simulated: placed.simulated };
+  }
+
+  // Plivo click-to-call: Plivo dials the agent first, then bridges to the lead,
+  // recording the call and streaming webhooks.
+  private async placePlivoCall(params: {
+    tenantId: string;
+    actorId: string;
+    leadId: string | null;
+    contactId: string | null;
+    agentPhone: string;
+    leadPhone: string;
+  }) {
+    const { tenantId, actorId, leadId, contactId, agentPhone, leadPhone } = params;
+
+    // Check TRAI window if calling an Indian number (+91)
+    if (leadPhone.startsWith("+91") && !telephonyRoutingService.isWithinTraiWindow()) {
+      throw new BadRequestError(
+        "Calls to Indian numbers can only be placed between 9:00 AM and 9:00 PM IST (TRAI regulation). Try again inside the window."
+      );
+    }
+
+    const resolved = await telephonyResolverService.resolvePlivo(tenantId);
+    if (resolved.mode === "none" && !plivoClient.isSimulated()) {
+      throw new BadRequestError(
+        "Your Plivo settings aren't validated yet. Open Telephony settings and click Validate, then try the call again."
+      );
+    }
+
+    const agentNumber = await telephonyNumbersRepository.agentNumber(tenantId, actorId);
+    const callerId = agentNumber?.phone ?? resolved.mainPhone ?? "";
+
+    const callRow = await telephonyRepository.createCall({
+      tenant_id: tenantId,
+      lead_id: leadId,
+      contact_id: contactId,
+      agent_user_id: actorId,
+      provider: "plivo",
+      direction: "OUTBOUND",
+      call_status: "queued",
+      from_number: callerId || "simulated",
+      to_number: leadPhone,
+    });
+
+    const answerUrl = `${config.APP_PUBLIC_URL}/api/v1/telephony/webhooks/plivo/${resolved.webhookToken}/answer?leadPhone=${encodeURIComponent(leadPhone)}&callerId=${encodeURIComponent(callerId)}&callId=${callRow.id}`;
+    const hangupUrl = `${config.APP_PUBLIC_URL}/api/v1/telephony/webhooks/plivo/${resolved.webhookToken}/hangup?callId=${callRow.id}`;
+
+    let placed;
+    try {
+      placed = await plivoClient.placeConnectCall({
+        creds: resolved.creds,
+        from: callerId || "simulated",
+        to: agentPhone,
+        leadPhone,
+        answerUrl,
+        hangupUrl,
+      });
+    } catch (err) {
+      await db
+        .updateTable("voice_calls")
+        .set({
+          call_status: "failed",
+          call_error: err instanceof Error ? err.message : "Plivo call failed",
+          completed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where("id", "=", callRow.id)
+        .execute();
+      throw new BadRequestError(
+        "Plivo could not place the call. Check your Plivo account balance and settings."
+      );
+    }
+
+    const updated = await db
+      .updateTable("voice_calls")
+      .set({
+        external_call_id: placed.callUuid,
+        call_status: placed.status,
+        updated_at: new Date(),
+      })
+      .where("id", "=", callRow.id)
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    engineService.audit(tenantId, actorId, "telephony.call_placed", "voice_call", callRow.id, {
+      mode: resolved.mode,
+      provider: "plivo",
+      simulated: placed.simulated,
+    });
+    return { ...updated, mode: resolved.mode, simulated: placed.simulated };
   }
 
   // Exotel click-to-call: Exotel dials the agent first, then the lead, who

@@ -30,17 +30,16 @@ interface TaxInvoiceModalProps {
 }
 
 export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModalProps) {
-  if (!invoice) return null;
-
   // Active tenant's verified billing profile from Super Admin
   const profileQuery = useQuery({
     queryKey: ["my-billing-profile"],
     queryFn: getMyBillingProfile,
     staleTime: 60_000,
+    enabled: !!invoice && open,
   });
   const profile = profileQuery.data;
 
-  const rawDetails = invoice.details;
+  const rawDetails = invoice?.details;
   const details: Record<string, any> = React.useMemo(() => {
     if (!rawDetails) return {};
     if (typeof rawDetails === "string") {
@@ -53,31 +52,31 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
     return rawDetails;
   }, [rawDetails]);
 
-  const isPaid = invoice.status === "PAID";
+  const isPaid = invoice?.status === "PAID";
 
   // Financial values
-  const baseAmount = Number(invoice.amount) || 0;
-  const taxAmount = Number(invoice.tax) || 0;
+  const baseAmount = Number(invoice?.amount) || 0;
+  const taxAmount = Number(invoice?.tax) || 0;
   const grandTotal = baseAmount + taxAmount;
 
-  // Organization / Tenant billing details (Dynamic with BN Intelhub fallback)
-  const companyLegalName = profile?.legal_name || "BN INTELHUB PVT. LTD.";
-  const companyBrandName = profile?.brand_name || profile?.legal_name || "BN Intelhub";
-  const companyLogo = profile?.logo_url || "/invoice-assets/bn_logo.png";
+  // Organization / Tenant billing details (Dynamic with generic demo fallback)
+  const companyLegalName = profile?.legal_name || "ACME TECHNOLOGIES PVT. LTD.";
+  const companyBrandName = profile?.brand_name || profile?.legal_name || "Acme Technologies";
+  const companyLogo = profile?.logo_url || "";
   const companyAddress = profile
     ? `${profile.address}, ${profile.city} - ${profile.pincode}`
-    : "STR - Plot - 9 Part, Industrial Area, Namkum Ranchi - 834010";
-  const companyPhone = profile?.phone || "+91 8936078905";
-  const companyEmail = profile?.email || "bnintelhub@gmail.com";
-  const companyWebsite = profile?.website || "https://bnintelhub.com";
-  const companyGstin = profile?.gstin || "20AAXCB9795E1ZR";
-  const companyCin = profile?.cin || "U62013JH2024PTC022651";
+    : "101, Business Park, Tech Zone, Mumbai - 400001";
+  const companyPhone = profile?.phone || "+91 9876543210";
+  const companyEmail = profile?.email || "billing@company.example.com";
+  const companyWebsite = profile?.website || "https://company.example.com";
+  const companyGstin = profile?.gstin || "27AAACA1234A1Z5";
+  const companyCin = profile?.cin || "U72900MH2023PTC123456";
 
   // Bank & UPI Settlement
-  const bankName = profile?.bank_name || "STATE BANK OF INDIA";
-  const bankAcctName = profile?.account_name || "BN Intelhub private limited";
-  const bankAcctNo = profile?.account_number || "44656194231";
-  const bankIfsc = profile?.ifsc || "SBIN0000167";
+  const bankName = profile?.bank_name || "HDFC BANK";
+  const bankAcctName = profile?.account_name || "Acme Technologies Private Limited";
+  const bankAcctNo = profile?.account_number || "50100432109876";
+  const bankIfsc = profile?.ifsc || "HDFC0000123";
   const upiId = profile?.upi_id || "";
 
   // Dynamic Scan-to-Pay QR: If UPI ID is configured, generate dynamic UPI payment QR with exact amount!
@@ -85,35 +84,37 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
     ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
         `upi://pay?pa=${upiId}&pn=${encodeURIComponent(bankAcctName)}&am=${grandTotal}&cu=INR`
       )}`
-    : "/invoice-assets/bn_upi_qr.png";
+    : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(
+        `upi://pay?pa=billing@okhdfcbank&pn=${encodeURIComponent(bankAcctName)}&am=${grandTotal}&cu=INR`
+      )}`;
 
   // Signatory & Legal
-  const signatoryName = profile?.signatory_name || "Adarsh Singh";
+  const signatoryName = profile?.signatory_name || "Rajesh Sharma";
   const signatoryDesignation = profile?.signatory_designation || "Director";
   const signatureImg = profile?.signature_url || SIGNATURE_DATA_URL;
-  const jurisdictionCity = profile?.jurisdiction_city || profile?.city || "Ranchi";
+  const jurisdictionCity = profile?.jurisdiction_city || profile?.city || "Mumbai";
 
   // Client info fallback
   const clientName =
     details.client_name ||
-    (typeof invoice.account === "object" ? invoice.account?.name : invoice.account) ||
-    "a2z indian pvt ltd";
-  const clientAddress = details.client_address || "Pathalkudwa church lane";
-  const clientPhone = details.client_phone || "+919812345678";
-  const clientEmail = details.client_email || "rahul@example.org";
-  const clientGstin = details.client_gstin || "2323454525677";
+    (typeof invoice?.account === "object" ? invoice.account?.name : invoice?.account) ||
+    "Sample Client Private Limited";
+  const clientAddress = details.client_address || "Flat 402, Sunshine Heights, MG Road";
+  const clientPhone = details.client_phone || "+91 9876543211";
+  const clientEmail = details.client_email || "client@example.org";
+  const clientGstin = details.client_gstin || "27AABCS1429B1ZB";
 
   // Project details fallback
   const projectType = details.project_type || "IT Services, Software Dev.";
-  const projectName = details.project_name || "landing page with crud operation";
-  const billingPeriod = details.billing_period || (invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "12 Nov 2026");
+  const projectName = details.project_name || "Web Application & API Development";
+  const billingPeriod = details.billing_period || (invoice?.issued_at ? new Date(invoice.issued_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "12 Nov 2026");
   const paymentTerms = details.payment_terms || "Payment due within 15 days of invoice date.";
   const reverseCharge = details.reverse_charge || "No";
 
   // State detection & Place of Supply
-  const defaultSupply = profile ? `${profile.state} (${profile.state_code})` : "Jharkhand (20)";
+  const defaultSupply = profile ? `${profile.state} (${profile.state_code})` : "Maharashtra (27)";
   const placeOfSupply = details.place_of_supply || (clientAddress.toLowerCase().includes("bengal") ? "West Bengal (19)" : defaultSupply);
-  const homeStateCode = profile?.state_code || "20";
+  const homeStateCode = profile?.state_code || "27";
   const isInterState = details.tax_type === "IGST" || (!clientAddress.toLowerCase().includes(homeStateCode) && !placeOfSupply.includes(`(${homeStateCode})`));
 
   const cgst = isInterState ? 0 : Math.round(taxAmount / 2);
@@ -178,6 +179,8 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
 
   const formatCurr = (num: number) =>
     num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!invoice) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -273,14 +276,20 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
             <div className="flex justify-between items-start gap-4 pb-3.5 border-b border-slate-300">
               {/* Left: Company Logo & Details */}
               <div className="space-y-0.5 max-w-[62%]">
-                <img
-                  src={companyLogo}
-                  alt={companyBrandName}
-                  className="h-10 object-contain mb-1"
-                  onError={(e) => {
-                    (e.target as HTMLElement).style.display = "none";
-                  }}
-                />
+                {companyLogo ? (
+                  <img
+                    src={companyLogo}
+                    alt={companyBrandName}
+                    className="h-10 object-contain mb-1"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <h2 className="text-base font-black tracking-tight text-slate-900 uppercase mb-0.5">
+                    {companyBrandName}
+                  </h2>
+                )}
                 <p className="text-[10px] font-normal text-slate-600 leading-tight">
                   {companyAddress}
                 </p>

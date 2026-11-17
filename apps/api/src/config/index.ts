@@ -160,6 +160,14 @@ const config = {
   // Exotel is BYO-only (no platform default account); this flag lets the whole
   // Exotel flow run simulated in dev without an Exotel account.
   EXOTEL_SIMULATE: process.env.EXOTEL_SIMULATE === "true",
+  // Plivo default / platform credentials and simulation toggle
+  PLIVO_AUTH_ID: process.env.PLIVO_AUTH_ID ?? "",
+  PLIVO_AUTH_TOKEN: process.env.PLIVO_AUTH_TOKEN ?? "",
+  PLIVO_DEFAULT_FROM_NUMBER: process.env.PLIVO_DEFAULT_FROM_NUMBER ?? "",
+  PLIVO_SIMULATE:
+    process.env.PLIVO_SIMULATE !== undefined
+      ? process.env.PLIVO_SIMULATE === "true"
+      : process.env.TELEPHONY_SIMULATE === "true",
 
   // Payments (Razorpay) default tier. Empty keys => simulated (no real payment
   // links / charges), so the app and tests run with no Razorpay account. Tenant

@@ -67,6 +67,7 @@ class FinanceRepository {
         sql<string>`coalesce(sum(tax) filter (where status = 'PAID'), 0)`.as("tax"),
       ])
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return {
       revenue: Number(row?.revenue ?? 0),
@@ -93,6 +94,7 @@ class FinanceRepository {
       .selectAll("invoices")
       .select(["accounts.name as account", "contacts.name as contact"])
       .where("invoices.tenant_id", "=", tenantId)
+      .where("invoices.deleted_at", "is", null)
       .orderBy("invoices.issued_at", "desc")
       .orderBy("invoices.created_at", "desc")
       .execute();
@@ -114,6 +116,7 @@ class FinanceRepository {
       .selectAll()
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -125,6 +128,7 @@ class FinanceRepository {
         sql<string | null>`max(substring(number from '^INV-([0-9]+)$')::bigint)`.as("max_suffix")
       )
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return row?.max_suffix == null ? null : Number(row.max_suffix);
   }
@@ -224,9 +228,31 @@ class FinanceRepository {
     return !!row;
   }
 
-  async deleteInvoice(id: string, tenantId: string, trx?: Transaction<DB>): Promise<boolean> {
+  async deleteInvoice(
+    id: string,
+    tenantId: string,
+    actorId?: string,
+    trx?: Transaction<DB>
+  ): Promise<boolean> {
     const row = await (trx || db)
-      .deleteFrom("invoices")
+      .updateTable("invoices")
+      .set({ deleted_at: new Date(), deleted_by: actorId ?? null })
+      .where("id", "=", id)
+      .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
+      .returning("id")
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  async restoreInvoice(
+    id: string,
+    tenantId: string,
+    trx?: Transaction<DB>
+  ): Promise<boolean> {
+    const row = await (trx || db)
+      .updateTable("invoices")
+      .set({ deleted_at: null, deleted_by: null })
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
       .returning("id")
@@ -345,6 +371,7 @@ class FinanceRepository {
       .select(["name", "email", "phone"])
       .where("id", "=", contactId)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
   }
 
@@ -354,6 +381,7 @@ class FinanceRepository {
       .select("id")
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return !!row;
   }
@@ -364,6 +392,7 @@ class FinanceRepository {
       .select("id")
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return !!row;
   }
@@ -374,6 +403,7 @@ class FinanceRepository {
       .select("id")
       .where("id", "=", id)
       .where("tenant_id", "=", tenantId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     return !!row;
   }

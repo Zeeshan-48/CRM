@@ -41,3 +41,6 @@ blob-report/
 
 # TypeScript incremental state
 *.tsbuildinfo
+
+# Local test & scratch scripts
+scripts/test-*.mjs

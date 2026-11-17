@@ -13,8 +13,13 @@ describe("production config guard", () => {
   const prod = { ...config, isProduction: true };
 
   it("refuses the development JWT secret and credentials key", () => {
-    expect(() => assertProductionConfig(prod)).toThrow(/JWT_SECRET/);
-    expect(() => assertProductionConfig({ ...prod, JWT_SECRET: random(40) })).toThrow(
+    const devSecrets = {
+      ...prod,
+      JWT_SECRET: "dev-only-jwt-secret-change-me",
+      CREDENTIALS_ENCRYPTION_KEY: "dev-only-encryption-key-change-me",
+    };
+    expect(() => assertProductionConfig(devSecrets)).toThrow(/JWT_SECRET/);
+    expect(() => assertProductionConfig({ ...devSecrets, JWT_SECRET: random(40) })).toThrow(
       /CREDENTIALS_ENCRYPTION_KEY/
     );
   });

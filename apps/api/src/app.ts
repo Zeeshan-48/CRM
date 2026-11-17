@@ -10,6 +10,7 @@ import ingestRouter from "./routes/ingest.route";
 import operatorRootRouter from "./routes/operator";
 import operatorWebhookRouter from "./routes/operator/webhooks.route";
 import exotelWebhookRouter from "./routes/exotel-webhook.route";
+import plivoWebhookRouter from "./routes/plivo-webhook.route";
 import rootRouter from "./routes";
 import waWebhookRouter from "./routes/wa-webhook.route";
 
@@ -67,6 +68,7 @@ app.use("/api/v1/operator/webhooks", operatorWebhookRouter);
 // nothing). Mounted here so provider callbacks bypass globalApiLimiter, a
 // throttled Connect fetch is a live caller hearing dead air.
 app.use("/api/v1/telephony/webhooks/exotel", exotelWebhookRouter);
+app.use("/api/v1/telephony/webhooks/plivo", plivoWebhookRouter);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
