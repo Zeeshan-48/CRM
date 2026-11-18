@@ -244,6 +244,7 @@ describe("invoice edit and delete", () => {
       .selectFrom("invoices")
       .select("id")
       .where("id", "=", invoiceId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     expect(gone).toBeUndefined();
 

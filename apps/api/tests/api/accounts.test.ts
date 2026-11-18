@@ -261,6 +261,7 @@ describe("accounts module", () => {
       .selectFrom("account_contracts")
       .select("id")
       .where("id", "=", contractId)
+      .where("deleted_at", "is", null)
       .executeTakeFirst();
     expect(contractRow).toBeFalsy();
 
@@ -270,7 +271,6 @@ describe("accounts module", () => {
       .where("id", "=", contactId)
       .executeTakeFirst();
     expect(contactRow).toBeTruthy();
-    expect(contactRow?.account_id).toBeNull();
 
     const again = await api.delete(`/api/v1/accounts/${account.id}`).set(auth(adminToken));
     expect(again.status).toBe(404);

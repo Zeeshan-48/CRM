@@ -80,9 +80,10 @@ class TelephonyService {
     // change just the from-number without re-typing their secret auth token
     // (which the API never hands back).
     const existing = await telephonyRepository.getConfig(tenantId);
+    const defaultProvider = body.authId ? "PLIVO" : (body.subdomain || body.apiKey) ? "EXOTEL" : "TWILIO";
     const provider =
       String(body.provider ?? "").trim().toUpperCase() ||
-      (existing?.provider ?? "PLIVO");
+      (existing?.provider ?? defaultProvider);
     if (provider !== "TWILIO" && provider !== "EXOTEL" && provider !== "PLIVO") {
       throw new BadRequestError("provider must be PLIVO, EXOTEL, or TWILIO");
     }

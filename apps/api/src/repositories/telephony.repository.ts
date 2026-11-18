@@ -210,7 +210,7 @@ class TelephonyRepository {
       .where("tenant_id", "=", tenantId)
       // Human telephony providers only: the voice-AI engine and simulated demo
       // calls share voice_calls but belong to their own surfaces.
-      .where("provider", "in", ["twilio", "exotel", "manual"])
+      .where("provider", "in", ["twilio", "exotel", "plivo", "manual"])
       .orderBy("created_at", "desc")
       .limit(limit)
       .execute();
