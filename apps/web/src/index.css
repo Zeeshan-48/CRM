@@ -281,30 +281,60 @@
 }
 
 @media print {
-  body * {
-    visibility: hidden;
+  /* Unset radix dialog constraints so it prints cleanly without clipping or blank pages */
+  [data-radix-portal],
+  [data-radix-portal] > div,
+  .dialog-overlay,
+  .dialog-content {
+    all: unset !important;
+    display: block !important;
+    position: static !important;
+    transform: none !important;
+    overflow: visible !important;
+    max-height: none !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
   }
-  #printable-tax-invoice,
-  #printable-tax-invoice * {
-    visibility: visible;
+
+  body > *:not([data-radix-portal]) {
+    display: none !important;
   }
+
+  .dialog-overlay {
+    display: none !important;
+  }
+
+  /* Hide close button and non-printable bar */
+  [data-radix-portal] button,
+  .print\:hidden {
+    display: none !important;
+  }
+
   #printable-tax-invoice {
-    position: absolute;
-    left: 0;
-    top: 0;
+    display: block !important;
+    position: static !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 15px !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
-    background: white !important;
-    color: #1e293b !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
+
+  #printable-tax-invoice * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 10mm 8mm;
   }
 }
