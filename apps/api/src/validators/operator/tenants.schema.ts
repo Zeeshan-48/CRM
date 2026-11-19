@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optBool, optStr, reqStr } from "../common";
+import { optBool, optRecord, optStr, reqStr } from "../common";
 
 // Mirrors src/db/enums.ts tenant_status.
 const TENANT_STATUS = ["ACTIVE", "SUSPENDED", "CLOSED"] as const;
@@ -69,4 +69,5 @@ export const upsertBillingProfileSchema = z.object({
   jurisdiction_city: optStr,
   notes: optStr,
   is_verified: optBool,
+  invoice_settings: optRecord,
 });

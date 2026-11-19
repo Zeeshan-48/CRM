@@ -219,6 +219,28 @@ export const getGatewayDefault = () =>
 export const setGatewayDefault = (gateway: GatewayName) =>
   apiPut<{ gateway: GatewayName }>("/finance/gateway-default", { gateway });
 
+export interface InvoiceSettings {
+  theme?: "modern" | "classic" | "minimal";
+  primary_color?: string;
+  secondary_color?: string;
+  currency_symbol?: string;
+  tax_label?: string;
+  toggles?: {
+    show_qr_code?: boolean;
+    show_bank_details?: boolean;
+    show_signature?: boolean;
+    show_pan_cin?: boolean;
+    show_project_details?: boolean;
+    show_hsn_sac?: boolean;
+    show_amount_in_words?: boolean;
+  };
+  policies?: {
+    payment_terms?: string;
+    declaration?: string;
+    footer_note?: string;
+  };
+}
+
 // ---- Tenant Billing Profile ----
 export interface TenantBillingProfile {
   id: string;
@@ -252,6 +274,7 @@ export interface TenantBillingProfile {
   notes?: string | null;
   is_verified: boolean;
   verified_at?: string | null;
+  invoice_settings?: InvoiceSettings | string | null;
 }
 
 export const getMyBillingProfile = () =>

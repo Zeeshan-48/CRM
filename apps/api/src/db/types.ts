@@ -958,6 +958,7 @@ export type tenant_billing_profiles = {
   notes: string | null;
   is_verified: Generated<boolean>;
   verified_at: Timestamp | null;
+  invoice_settings: Generated<Record<string, unknown> | null>;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 };

@@ -34,6 +34,7 @@ export interface UpsertTenantBillingProfileInput {
   jurisdiction_city?: string | null;
   notes?: string | null;
   is_verified?: boolean;
+  invoice_settings?: Record<string, unknown> | null;
 }
 
 class TenantBillingProfileRepository {
@@ -107,6 +108,10 @@ class TenantBillingProfileRepository {
           notes: data.notes !== undefined ? data.notes : existing.notes,
           is_verified:
             data.is_verified !== undefined ? data.is_verified : existing.is_verified,
+          invoice_settings:
+            data.invoice_settings !== undefined
+              ? (data.invoice_settings as any)
+              : existing.invoice_settings,
           verified_at: verifiedAt,
           updated_at: now,
         })
@@ -150,6 +155,7 @@ class TenantBillingProfileRepository {
         jurisdiction_city: data.jurisdiction_city || data.city,
         notes: data.notes || null,
         is_verified: data.is_verified ?? false,
+        invoice_settings: (data.invoice_settings || {}) as any,
         verified_at: data.is_verified ? now : null,
         created_at: now,
         updated_at: now,

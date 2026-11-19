@@ -99,6 +99,28 @@ export interface TenantWithUsage extends Tenant {
   billing_verified?: boolean;
 }
 
+export interface InvoiceSettings {
+  theme?: "modern" | "classic" | "minimal";
+  primary_color?: string;
+  secondary_color?: string;
+  currency_symbol?: string;
+  tax_label?: string;
+  toggles?: {
+    show_qr_code?: boolean;
+    show_bank_details?: boolean;
+    show_signature?: boolean;
+    show_pan_cin?: boolean;
+    show_project_details?: boolean;
+    show_hsn_sac?: boolean;
+    show_amount_in_words?: boolean;
+  };
+  policies?: {
+    payment_terms?: string;
+    declaration?: string;
+    footer_note?: string;
+  };
+}
+
 export interface TenantBillingProfile {
   id: string;
   tenant_id: string;
@@ -131,6 +153,7 @@ export interface TenantBillingProfile {
   notes: string | null;
   is_verified: boolean;
   verified_at: string | null;
+  invoice_settings?: InvoiceSettings | string | null;
   created_at?: string;
   updated_at?: string;
 }
