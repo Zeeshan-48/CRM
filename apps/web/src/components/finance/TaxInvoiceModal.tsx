@@ -315,16 +315,18 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
               {/* Left: Company Logo & Details */}
               <div className="space-y-0.5 max-w-[62%]">
                 {companyLogo ? (
-                  <img
-                    src={companyLogo}
-                    alt={companyBrandName}
-                    className="h-10 object-contain mb-1"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                    }}
-                  />
+                  <div className="mb-2">
+                    <img
+                      src={companyLogo}
+                      alt={companyBrandName}
+                      className="h-16 max-h-20 max-w-[260px] object-contain object-left"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = "none";
+                      }}
+                    />
+                  </div>
                 ) : (
-                  <h2 className="text-base font-black tracking-tight text-slate-900 uppercase mb-0.5">
+                  <h2 className="text-lg font-black tracking-tight text-slate-900 uppercase mb-0.5">
                     {companyBrandName}
                   </h2>
                 )}
@@ -663,18 +665,18 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
 
               {/* Signature Box */}
               {showSignature ? (
-                <div className="text-right space-y-0.5">
-                  <p className="font-bold text-[10.5px] text-slate-900">For {companyBrandName}</p>
-                  <div className="h-16 flex justify-end items-center my-0.5">
+                <div className="text-right space-y-1">
+                  <p className="font-bold text-[11px] text-slate-900">For {companyBrandName}</p>
+                  <div className="min-h-[80px] h-20 max-w-[220px] ml-auto flex justify-end items-center my-1 relative">
                     <img
                       src={signatureImg}
-                      alt="Authorized Signatory"
-                      className="h-16 object-contain"
+                      alt="Authorized Signatory Stamp"
+                      className="max-h-20 max-w-[200px] object-contain object-right"
                     />
                   </div>
-                  <p className="text-[10px] font-semibold text-slate-700 block pr-2">{signatoryDesignation}</p>
-                  <div className="border-t border-slate-400 w-44 ml-auto pt-0.5">
-                    <p className="font-bold text-[10px] text-slate-900">
+                  <p className="text-[10px] font-semibold text-slate-700 block pr-1">{signatoryDesignation}</p>
+                  <div className="border-t border-slate-400 w-48 ml-auto pt-1 mt-0.5">
+                    <p className="font-bold text-[10.5px] text-slate-900">
                       {signatoryName}
                     </p>
                     <p className="text-[9px] text-slate-500 uppercase tracking-wider block">

@@ -676,14 +676,14 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => canWrite && handleDrop(e, setLogoUrl, "Company Logo")}
                       title="Click or drag image to upload logo"
-                      className="h-10 w-28 border border-dashed rounded-md bg-white hover:bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs cursor-pointer transition-colors group relative"
+                      className="h-14 w-36 border-2 border-dashed rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs cursor-pointer transition-colors group relative"
                     >
                       {logoUrl ? (
-                        <img src={logoUrl} alt="Logo" className="h-full object-contain p-0.5" />
+                        <img src={logoUrl} alt="Logo" className="h-full max-h-12 max-w-[130px] object-contain p-1" />
                       ) : (
                         <div className="flex flex-col items-center justify-center text-muted-foreground group-hover:text-brand">
-                          <ImageIcon className="size-4" />
-                          <span className="text-[8.5px] mt-0.5">Click / Drop</span>
+                          <ImageIcon className="size-5" />
+                          <span className="text-[9px] mt-0.5 font-medium">Click / Drop Logo</span>
                         </div>
                       )}
                     </div>
@@ -1022,14 +1022,14 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={(e) => canWrite && handleDrop(e, setSignatureUrl, "Signature Stamp")}
                       title="Click or drag image to upload signature"
-                      className="h-10 w-28 border border-dashed rounded-md bg-white hover:bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs cursor-pointer transition-colors group relative"
+                      className="h-14 w-36 border-2 border-dashed rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center overflow-hidden shrink-0 shadow-xs cursor-pointer transition-colors group relative"
                     >
                       {signatureUrl ? (
-                        <img src={signatureUrl} alt="Signature" className="h-full object-contain p-0.5" />
+                        <img src={signatureUrl} alt="Signature" className="h-full max-h-12 max-w-[130px] object-contain p-1" />
                       ) : (
                         <div className="flex flex-col items-center justify-center text-muted-foreground group-hover:text-brand">
-                          <ImageIcon className="size-4" />
-                          <span className="text-[8.5px] mt-0.5">Click / Drop</span>
+                          <ImageIcon className="size-5" />
+                          <span className="text-[9px] mt-0.5 font-medium">Click / Drop Stamp</span>
                         </div>
                       )}
                     </div>
@@ -1438,7 +1438,9 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                 <div className="flex justify-between items-start gap-4 pb-3 border-b border-slate-200">
                   <div className="space-y-0.5 max-w-[60%]">
                     {logoUrl ? (
-                      <img src={logoUrl} alt="Logo" className="h-8 object-contain mb-1" />
+                      <div className="mb-1.5">
+                        <img src={logoUrl} alt="Logo" className="h-12 max-h-14 max-w-[200px] object-contain object-left" />
+                      </div>
                     ) : (
                       <h2 className="text-sm font-black tracking-tight text-slate-900 uppercase">
                         {brandName || legalName || tenant.name}
@@ -1619,9 +1621,9 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                   {showSignature && (
                     <div className="text-right">
                       <p className="font-bold text-[9px] text-slate-900">For {brandName || legalName || tenant.name}</p>
-                      <div className="h-10 flex justify-end items-center my-0.5">
+                      <div className="min-h-[56px] h-14 max-w-[160px] ml-auto flex justify-end items-center my-0.5">
                         {signatureUrl ? (
-                          <img src={signatureUrl} alt="Signature" className="h-9 object-contain" />
+                          <img src={signatureUrl} alt="Signature" className="max-h-14 max-w-[160px] object-contain object-right" />
                         ) : (
                           <span className="text-[8px] italic text-slate-400 border border-dashed rounded px-2 py-1">
                             Digital Seal
@@ -1629,7 +1631,7 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                         )}
                       </div>
                       <p className="font-semibold text-[8.5px] text-slate-700">{signatoryDesignation}</p>
-                      <div className="border-t border-slate-400 w-32 ml-auto pt-0.5 mt-0.5">
+                      <div className="border-t border-slate-400 w-36 ml-auto pt-0.5 mt-0.5">
                         <p className="font-bold text-slate-900">{signatoryName || "Authorized Signatory"}</p>
                       </div>
                     </div>
