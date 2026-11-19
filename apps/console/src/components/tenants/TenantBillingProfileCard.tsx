@@ -857,7 +857,7 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                 <div className="space-y-1.5">
                   <Label className="text-xs font-medium">Official Billing Email</Label>
                   <Input
-                    placeholder="e.g. billing@acme.com"
+                    placeholder="e.g. billing@acme.example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     disabled={!canWrite}
@@ -1448,7 +1448,7 @@ export function TenantBillingProfileCard({ tenant, canWrite }: TenantBillingProf
                       {address || "101, Business Park, Tech Zone"}, {city || "Mumbai"} - {pincode || "400001"}
                     </p>
                     <p className="text-[9.5px] text-slate-600">
-                      Ph: {phone || "+91 9876543210"} | {email || "billing@company.com"}
+                      Ph: {phone || "+91 9876543210"} | {email || "billing@example.com"}
                     </p>
                     {showPanCin && (
                       <p className="text-[9.5px] font-bold text-slate-800">
