@@ -1,4 +1,5 @@
 import { db } from "../db/connection";
+import { enqueueRecordingDownload } from "../queue/recordings.queue";
 import inboundRepository from "../repositories/inbound.repository";
 import telephonyRepository, {
   TERMINAL_CALL_STATUSES,
@@ -164,14 +165,24 @@ class ExotelWebhookService {
     state.callbacks = [...(Array.isArray(state.callbacks) ? state.callbacks : []), q];
 
     const missed = status !== "completed" || durationSec === 0;
+    const recUrl = q.RecordingUrl?.trim() || call.recording_url;
     await telephonyRepository.updateCallByExternalId(callSid, {
       call_status: status,
       duration_sec: durationSec,
-      recording_url: q.RecordingUrl?.trim() || call.recording_url,
+      recording_url: recUrl,
       agent_user_id: agentUserId ?? call.agent_user_id,
       ...(missed ? { outcome: "MISSED" } : {}),
       structured_data: state,
     });
+
+    if (recUrl && recUrl.startsWith("http")) {
+      void enqueueRecordingDownload({
+        tenantId: cfg.tenant_id,
+        callId: call.id,
+        provider: "exotel",
+        recordingUrl: recUrl,
+      });
+    }
 
     if (missed) {
       await this.createCallbackTask(cfg.tenant_id, call);
@@ -216,6 +227,15 @@ class ExotelWebhookService {
         : {}),
       structured_data: state,
     });
+
+    if (recordingUrl) {
+      void enqueueRecordingDownload({
+        tenantId: call.tenant_id,
+        callId: call.id,
+        provider: "exotel",
+        recordingUrl,
+      });
+    }
 
     if (!wasTerminal && TERMINAL_CALL_STATUSES.includes(status)) {
       void callIntelligenceService.processCall(call.id);

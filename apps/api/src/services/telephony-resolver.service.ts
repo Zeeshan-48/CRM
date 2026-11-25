@@ -95,7 +95,11 @@ class TelephonyResolverService {
     const cfg = await telephonyRepository.getConfig(tenantId);
     if (cfg?.provider === "PLIVO") return "PLIVO";
     if (cfg?.provider === "EXOTEL") return "EXOTEL";
-    return "TWILIO";
+    if (cfg?.provider === "TWILIO") return "TWILIO";
+    // Platform default precedence: if Plivo is configured, prefer Plivo
+    if (config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN) return "PLIVO";
+    if (config.TWILIO_ACCOUNT_SID && config.TWILIO_AUTH_TOKEN) return "TWILIO";
+    return "PLIVO";
   }
 
   // Plivo: supports tenant BYO or fallback to platform-level default credentials.
@@ -125,14 +129,14 @@ class TelephonyResolverService {
       }
     }
 
-    if (config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN && config.PLIVO_DEFAULT_FROM_NUMBER) {
+    if (config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN) {
       return {
         mode: "default",
         creds: {
           authId: config.PLIVO_AUTH_ID,
           authToken: config.PLIVO_AUTH_TOKEN,
         },
-        mainPhone: config.PLIVO_DEFAULT_FROM_NUMBER,
+        mainPhone: config.PLIVO_DEFAULT_FROM_NUMBER || "",
         webhookToken: "platform_default_webhook_token",
       };
     }

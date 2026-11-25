@@ -3,9 +3,14 @@ import {
   Archive,
   Building2,
   CheckCircle2,
+  Download,
   FileSpreadsheet,
   FileText,
+  Headphones,
   Loader2,
+  PhoneIncoming,
+  PhoneOff,
+  PhoneOutgoing,
   RefreshCw,
   RotateCcw,
   Search,
@@ -57,8 +62,16 @@ import {
 } from "@/lib/api/vault";
 import { formatDate, formatDateTime, formatNumber, timeAgo } from "@/lib/format";
 import { useDebouncedValue } from "@/lib/hooks";
+import { cn } from "@/lib/utils";
 
 const ALL_TENANTS = "__ALL__";
+
+function formatDuration(seconds?: number | null) {
+  if (!seconds || seconds <= 0) return "0s";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+}
 
 type EntityKey =
   | "leads"
@@ -67,7 +80,8 @@ type EntityKey =
   | "accounts"
   | "contracts"
   | "invoices"
-  | "roles";
+  | "roles"
+  | "recordings";
 
 interface EntityTabDef {
   key: EntityKey;
@@ -83,6 +97,7 @@ const ENTITY_TABS: EntityTabDef[] = [
   { key: "contracts", label: "Contracts", icon: FileText },
   { key: "invoices", label: "Invoices", icon: FileText },
   { key: "roles", label: "Roles", icon: Shield },
+  { key: "recordings", label: "Call Recordings", icon: Headphones },
 ];
 
 export default function TenantVaultPage() {
@@ -217,7 +232,7 @@ export default function TenantVaultPage() {
       />
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         <StatCard
           label="Leads"
           value={
@@ -393,6 +408,31 @@ export default function TenantVaultPage() {
           }
           icon={Shield}
         />
+        <StatCard
+          label="Call Recordings"
+          value={
+            summary?.recordings ? (
+              <span className="flex items-baseline gap-1.5 text-xl font-bold">
+                {summary.recordings.total}
+                {summary.recordings.withAudio > 0 && (
+                  <span className="text-xs font-normal text-emerald-500">
+                    ({summary.recordings.withAudio} audio)
+                  </span>
+                )}
+              </span>
+            ) : (
+              "—"
+            )
+          }
+          hint={
+            summary?.recordings ? (
+              <span className="text-[11px] text-muted-foreground">
+                {Math.round(summary.recordings.totalDurationSec / 60)} mins audio
+              </span>
+            ) : null
+          }
+          icon={Headphones}
+        />
       </div>
 
       {/* Entity Selection Tabs */}
@@ -430,7 +470,7 @@ export default function TenantVaultPage() {
             className="h-8 text-xs font-medium"
             onClick={() => setFilter("all")}
           >
-            All Records
+            {entity === "recordings" ? "All Calls" : "All Records"}
           </Button>
           <Button
             size="sm"
@@ -438,23 +478,31 @@ export default function TenantVaultPage() {
             className="h-8 text-xs font-medium"
             onClick={() => setFilter("active")}
           >
-            Active Only
+            {entity === "recordings" ? "With Audio Recording" : "Active Only"}
           </Button>
           <Button
             size="sm"
-            variant={filter === "deleted" ? "destructive" : "ghost"}
+            variant={filter === "deleted" ? (entity === "recordings" ? "default" : "destructive") : "ghost"}
             className="h-8 gap-1.5 text-xs font-medium"
             onClick={() => setFilter("deleted")}
           >
-            <Archive className="size-3.5" />
-            Deleted / Vault
+            {entity === "recordings" ? (
+              <CheckCircle2 className="size-3.5" />
+            ) : (
+              <Archive className="size-3.5" />
+            )}
+            {entity === "recordings" ? "Completed Calls" : "Deleted / Vault"}
           </Button>
         </div>
 
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
           <Input
-            placeholder={`Search ${entity}...`}
+            placeholder={
+              entity === "recordings"
+                ? "Search by phone, lead, contact, agent, or tenant..."
+                : `Search ${entity}...`
+            }
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="h-9 pl-9 text-sm"
@@ -478,10 +526,16 @@ export default function TenantVaultPage() {
           ) : !dataQuery.data?.items?.length ? (
             <div className="py-12">
               <EmptyState
-                icon={Archive}
-                title="No records found"
+                icon={entity === "recordings" ? Headphones : Archive}
+                title={entity === "recordings" ? "No call records found" : "No records found"}
                 description={
-                  filter === "deleted"
+                  entity === "recordings"
+                    ? filter === "deleted"
+                      ? "No completed calls found."
+                      : filter === "active"
+                      ? "No calls with audio recordings found."
+                      : "No call records found matching current criteria."
+                    : filter === "deleted"
                     ? `No deleted ${entity} found in the Vault for this view.`
                     : entity === "roles"
                     ? "No custom roles created by this tenant yet. Standard built-in roles (ADMIN, MANAGER, SALES_AGENT, etc.) are active. When tenant admin creates custom roles in Users & Roles, they will appear here in real-time."
@@ -496,8 +550,8 @@ export default function TenantVaultPage() {
                   <TableRow>
                     <TableHead>Tenant</TableHead>
                     {renderEntityHeaders(entity)}
-                    <TableHead>Lifecycle Status</TableHead>
-                    <TableHead>Created</TableHead>
+                    <TableHead>{entity === "recordings" ? "Call Status" : "Lifecycle Status"}</TableHead>
+                    <TableHead>{entity === "recordings" ? "Call Time" : "Created"}</TableHead>
                     <TableHead className="text-right">Vault Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -526,7 +580,30 @@ export default function TenantVaultPage() {
                         {renderEntityCells(entity, row)}
 
                         <TableCell>
-                          {isDeleted ? (
+                          {entity === "recordings" ? (
+                            <div className="flex flex-col gap-0.5">
+                              <Badge
+                                variant={
+                                  row.call_status === "completed"
+                                    ? "secondary"
+                                    : row.call_status === "failed" || row.call_status === "no-answer"
+                                    ? "destructive"
+                                    : "outline"
+                                }
+                                className={cn(
+                                  "w-fit text-[11px] capitalize",
+                                  row.call_status === "completed" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                                )}
+                              >
+                                {row.call_status || "queued"}
+                              </Badge>
+                              {row.call_error && (
+                                <span className="text-[10px] text-destructive truncate max-w-[120px]" title={row.call_error}>
+                                  {row.call_error}
+                                </span>
+                              )}
+                            </div>
+                          ) : isDeleted ? (
                             <div className="flex flex-col gap-1">
                               <Badge variant="destructive" className="w-fit text-[11px]">
                                 DELETED (VAULT)
@@ -551,11 +628,32 @@ export default function TenantVaultPage() {
                         </TableCell>
 
                         <TableCell className="text-xs text-muted-foreground">
-                          {row.builtin ? "System Default" : formatDate(row.created_at)}
+                          {entity === "recordings"
+                            ? formatDateTime(row.created_at)
+                            : row.builtin
+                            ? "System Default"
+                            : formatDate(row.created_at)}
                         </TableCell>
 
                         <TableCell className="text-right">
-                          {isDeleted ? (
+                          {entity === "recordings" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                              title="Permanently Purge Call Record"
+                              onClick={() =>
+                                setPurgeTarget({
+                                  tenantId: row.tenant_id,
+                                  entity: "recordings",
+                                  id: row.id,
+                                  label: `Call ${row.from_number} → ${row.to_number} (${formatDuration(row.duration_sec)})`,
+                                })
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          ) : isDeleted ? (
                             <div className="flex items-center justify-end gap-1.5">
                               <Button
                                 size="sm"
@@ -720,6 +818,16 @@ function renderEntityHeaders(entity: EntityKey) {
           <TableHead>Role Type</TableHead>
           <TableHead className="min-w-[240px]">Assigned Members (User & Email)</TableHead>
           <TableHead>Permissions / Modules</TableHead>
+        </>
+      );
+    case "recordings":
+      return (
+        <>
+          <TableHead>Agent / User</TableHead>
+          <TableHead>Call Details</TableHead>
+          <TableHead>Lead / Contact</TableHead>
+          <TableHead>Duration & Provider</TableHead>
+          <TableHead className="min-w-[280px]">Audio Recording</TableHead>
         </>
       );
   }
@@ -941,5 +1049,103 @@ function renderEntityCells(entity: EntityKey, row: any) {
         </>
       );
     }
+
+    case "recordings":
+      return (
+        <>
+          <TableCell>
+            <div className="flex flex-col">
+              <span className="font-semibold text-xs text-foreground">
+                {row.agent_name || "System / Unassigned"}
+              </span>
+              {row.agent_email && (
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {row.agent_email}
+                </span>
+              )}
+            </div>
+          </TableCell>
+          <TableCell>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-1.5">
+                {row.direction === "INBOUND" ? (
+                  <Badge variant="outline" className="text-[10px] gap-1 text-sky-600 dark:text-sky-400 border-sky-300">
+                    <PhoneIncoming className="size-3" />
+                    INBOUND
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] gap-1 text-indigo-600 dark:text-indigo-400 border-indigo-300">
+                    <PhoneOutgoing className="size-3" />
+                    OUTBOUND
+                  </Badge>
+                )}
+              </div>
+              <div className="text-xs font-mono text-foreground">
+                {row.from_number} <span className="text-muted-foreground">→</span> {row.to_number}
+              </div>
+            </div>
+          </TableCell>
+          <TableCell>
+            {row.lead_name ? (
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-foreground">{row.lead_name}</span>
+                <Badge variant="secondary" className="w-fit text-[9px] px-1 py-0 mt-0.5">
+                  Lead
+                </Badge>
+              </div>
+            ) : row.contact_name ? (
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-foreground">{row.contact_name}</span>
+                <Badge variant="secondary" className="w-fit text-[9px] px-1 py-0 mt-0.5">
+                  Contact
+                </Badge>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">—</span>
+            )}
+          </TableCell>
+          <TableCell>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs font-semibold tabular-nums text-foreground">
+                {formatDuration(row.duration_sec)}
+              </span>
+              {row.provider && (
+                <Badge variant="outline" className="w-fit text-[9px] font-mono uppercase px-1 py-0">
+                  {row.provider}
+                </Badge>
+              )}
+            </div>
+          </TableCell>
+          <TableCell>
+            {row.audio_url ? (
+              <div className="flex items-center gap-2 py-1">
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <audio
+                  controls
+                  preload="none"
+                  src={row.audio_url}
+                  className="h-8 w-52 sm:w-60 accent-brand rounded"
+                />
+                <a
+                  href={row.audio_url}
+                  download={`recording-${row.id}.mp3`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 border rounded px-2.5 py-1.5 transition-colors shrink-0"
+                  title="Download MP3 Recording"
+                >
+                  <Download className="size-3" />
+                  MP3
+                </a>
+              </div>
+            ) : (
+              <span className="text-xs text-muted-foreground italic flex items-center gap-1">
+                <PhoneOff className="size-3.5" />
+                No audio recorded
+              </span>
+            )}
+          </TableCell>
+        </>
+      );
   }
 }

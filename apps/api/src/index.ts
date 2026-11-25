@@ -9,6 +9,7 @@ import config, { assertProductionConfig } from "./config";
 import { closeDB, waitForDBConnection } from "./db/connection";
 import { closeRedis } from "./db/redis";
 import { startJobs, stopJobs } from "./jobs";
+import plivoClient from "./services/plivo.client";
 import logger from "./utils/logger";
 
 assertProductionConfig();
@@ -90,7 +91,16 @@ const startWorker = async (): Promise<void> => {
   server.headersTimeout = 66_000;
 
   // Only the worker forked with RUN_JOBS runs the background jobs.
-  if (process.env.RUN_JOBS === "true") void startJobs();
+  if (process.env.RUN_JOBS === "true") {
+    void startJobs();
+
+    // Zero-config Telephony: Auto-sync Plivo Application webhooks on bootup with the server's public URL
+    if (config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN && config.APP_PUBLIC_URL) {
+      void plivoClient
+        .syncApplicationWebhook({ publicUrl: config.APP_PUBLIC_URL })
+        .catch((err) => logger.warn(`Plivo boot sync: ${String(err)}`));
+    }
+  }
 
   let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {

@@ -299,7 +299,7 @@
     border: none !important;
   }
 
-  body > *:not([data-radix-portal]) {
+  body > *:not([data-radix-portal], #printable-tax-invoice) {
     display: none !important;
   }
 

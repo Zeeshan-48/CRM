@@ -159,6 +159,15 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
   const sgst = isInterState ? 0 : taxAmount - cgst;
   const igst = isInterState ? taxAmount : 0;
 
+  // Fallback state if uploaded logo or signature fails to render
+  const [logoError, setLogoError] = React.useState(false);
+  const [sigError, setSigError] = React.useState(false);
+
+  React.useEffect(() => {
+    setLogoError(false);
+    setSigError(false);
+  }, [profile?.logo_url, profile?.signature_url]);
+
   // Live editable items state
   const [items, setItems] = React.useState<InvoiceLineItem[]>([]);
 
@@ -245,15 +254,28 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
               size: A4 portrait;
               margin: 10mm 8mm;
             }
+            *, *::before, *::after {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             html, body {
+              display: block !important;
+              visibility: visible !important;
               margin: 0 !important;
               padding: 0 !important;
               background: #ffffff !important;
               color: #0f172a !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+              font-family: inherit !important;
+            }
+            body > * {
+              display: block !important;
+              visibility: visible !important;
             }
             #printable-tax-invoice {
+              display: block !important;
+              visibility: visible !important;
+              position: static !important;
               width: 100% !important;
               max-width: 100% !important;
               margin: 0 auto !important;
@@ -262,9 +284,11 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
               box-shadow: none !important;
               background: #ffffff !important;
             }
-            * {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+            #printable-tax-invoice * {
+              visibility: visible !important;
+            }
+            .print\\:hidden {
+              display: none !important;
             }
           </style>
         </head>
@@ -277,8 +301,7 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
     `);
     doc.close();
 
-    // Give iframe short moment to load fonts & images before opening print dialog
-    setTimeout(() => {
+    const triggerPrint = () => {
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
@@ -289,9 +312,31 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
           if (iframe.parentNode) {
             iframe.parentNode.removeChild(iframe);
           }
-        }, 2000);
+        }, 1500);
       }
-    }, 250);
+    };
+
+    // Ensure all images are loaded before printing
+    const images = Array.from(doc.images || []);
+    let pendingImages = images.filter((img) => !img.complete).length;
+
+    if (pendingImages === 0) {
+      setTimeout(triggerPrint, 150);
+    } else {
+      const onImageFinish = () => {
+        pendingImages--;
+        if (pendingImages <= 0) {
+          triggerPrint();
+        }
+      };
+      images.forEach((img) => {
+        if (!img.complete) {
+          img.onload = onImageFinish;
+          img.onerror = onImageFinish;
+        }
+      });
+      setTimeout(triggerPrint, 500);
+    }
   };
 
   const formatDateDisplay = (dateStr?: string | null) => {
@@ -309,38 +354,6 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[860px] w-[96vw] p-0 overflow-hidden bg-white max-h-[96vh] sm:max-h-[96vh] flex flex-col border border-slate-300 shadow-2xl rounded-lg gap-0">
-        {/* Print Stylesheet */}
-        <style>{`
-          @media print {
-            body {
-              background: #fff !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            body * {
-              visibility: hidden;
-            }
-            #printable-tax-invoice, #printable-tax-invoice * {
-              visibility: visible;
-            }
-            #printable-tax-invoice {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              max-width: 100% !important;
-              margin: 0 !important;
-              padding: 12mm 15mm !important;
-              border: none !important;
-              box-shadow: none !important;
-            }
-            @page {
-              size: A4 portrait;
-              margin: 0;
-            }
-          }
-        `}</style>
-
         {/* Modal Controls (Hidden in Print) */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 bg-slate-50 border-b border-slate-200 shrink-0 print:hidden">
           <div className="flex items-center gap-2">
@@ -400,15 +413,13 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
             <div className="flex justify-between items-start gap-4 pb-3.5 border-b border-slate-300">
               {/* Left: Company Logo & Details */}
               <div className="space-y-0.5 max-w-[62%]">
-                {companyLogo ? (
+                {companyLogo && !logoError ? (
                   <div className="mb-2">
                     <img
                       src={companyLogo}
                       alt={companyBrandName}
                       className="h-16 max-h-20 max-w-[260px] object-contain object-left"
-                      onError={(e) => {
-                        (e.target as HTMLElement).style.display = "none";
-                      }}
+                      onError={() => setLogoError(true)}
                     />
                   </div>
                 ) : (
@@ -754,11 +765,23 @@ export function TaxInvoiceModal({ invoice, open, onOpenChange }: TaxInvoiceModal
                 <div className="text-right space-y-1">
                   <p className="font-bold text-[11px] text-slate-900">For {companyBrandName}</p>
                   <div className="min-h-[80px] h-20 max-w-[220px] ml-auto flex justify-end items-center my-1 relative">
-                    <img
-                      src={signatureImg}
-                      alt="Authorized Signatory Stamp"
-                      className="max-h-20 max-w-[200px] object-contain object-right"
-                    />
+                    {signatureImg && !sigError ? (
+                      <img
+                        src={signatureImg}
+                        alt="Authorized Signatory Stamp"
+                        className="max-h-20 max-w-[200px] object-contain object-right"
+                        onError={() => setSigError(true)}
+                      />
+                    ) : (
+                      <div className="border border-dashed border-slate-300 rounded px-3 py-1.5 text-center">
+                        <span className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider block">
+                          Digitally Signed
+                        </span>
+                        <span className="text-[8px] text-slate-400 font-mono block">
+                          Authorized Signatory
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <p className="text-[10px] font-semibold text-slate-700 block pr-1">{signatoryDesignation}</p>
                   <div className="border-t border-slate-400 w-48 ml-auto pt-1 mt-0.5">

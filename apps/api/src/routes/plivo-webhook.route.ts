@@ -8,24 +8,28 @@ import { asyncHandler } from "../utils/asynchandler";
 
 const router = Router();
 
-// Plivo calls Answer URL when agent answers
+const bodyParsers = [
+  express.json({ limit: "1mb" }),
+  express.urlencoded({ extended: true, limit: "1mb" }),
+];
+
+// Plivo calls Answer URL when call is initiated/answered (supports both GET and POST)
 router.get("/:token/answer", asyncHandler(handlePlivoAnswer));
+router.post("/:token/answer", ...bodyParsers, asyncHandler(handlePlivoAnswer));
+router.get("/answer", asyncHandler(handlePlivoAnswer));
+router.post("/answer", ...bodyParsers, asyncHandler(handlePlivoAnswer));
 
 // Plivo calls Hangup URL when call is finished
-router.post(
-  "/:token/hangup",
-  express.json({ limit: "1mb" }),
-  express.urlencoded({ extended: true, limit: "1mb" }),
-  asyncHandler(handlePlivoHangup)
-);
+router.post("/:token/hangup", ...bodyParsers, asyncHandler(handlePlivoHangup));
+router.get("/:token/hangup", asyncHandler(handlePlivoHangup));
+router.post("/hangup", ...bodyParsers, asyncHandler(handlePlivoHangup));
+router.get("/hangup", asyncHandler(handlePlivoHangup));
 
 // Plivo calls Recording URL when audio recording is ready
-router.post(
-  "/:token/recording",
-  express.json({ limit: "1mb" }),
-  express.urlencoded({ extended: true, limit: "1mb" }),
-  asyncHandler(handlePlivoRecording)
-);
+router.post("/:token/recording", ...bodyParsers, asyncHandler(handlePlivoRecording));
+router.get("/:token/recording", asyncHandler(handlePlivoRecording));
+router.post("/recording", ...bodyParsers, asyncHandler(handlePlivoRecording));
+router.get("/recording", asyncHandler(handlePlivoRecording));
 
 export default router;
 

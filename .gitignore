@@ -44,3 +44,11 @@ blob-report/
 
 # Local test & scratch scripts
 scripts/test-*.mjs
+
+# Local runner & tunnel utilities
+cloudflared*
+*.exe
+start-crm.bat
+scripts/start-tunnel.js
+scripts/telephony-tunnel.js
+

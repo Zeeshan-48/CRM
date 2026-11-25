@@ -18,6 +18,12 @@ import usersRepository, { TenantUserSummary } from "../../repositories/operator/
 import tenantBillingProfileRepository, {
   UpsertTenantBillingProfileInput,
 } from "../../repositories/tenant-billing-profile.repository";
+import telephonyRepository from "../../repositories/telephony.repository";
+import telephonyNumbersRepository from "../../repositories/telephony-numbers.repository";
+import telephonyService from "../telephony.service";
+import config from "../../config";
+import { ulid } from "ulid";
+import { isE164, normalizePhone } from "../../utils/phone";
 import logger from "../../utils/logger";
 import { generateTempPassword } from "../../utils/password";
 import auditService, { AuditActor } from "./audit.service";
@@ -432,6 +438,141 @@ class TenantsService {
     });
 
     return profile;
+  }
+
+  async getTelephony(tenantId: string) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+
+    const cfg = await telephonyRepository.getConfig(tenantId);
+    const numbers = await telephonyNumbersRepository.list(tenantId);
+    const platformPlivoLive = Boolean(config.PLIVO_AUTH_ID && config.PLIVO_AUTH_TOKEN);
+
+    return {
+      configured: !!cfg || numbers.length > 0,
+      status: cfg?.status ?? (numbers.length > 0 ? "ACTIVE" : "PENDING"),
+      from_number: cfg?.from_number ?? (numbers[0]?.phone ?? null),
+      provider: cfg?.provider ?? "PLIVO",
+      platformPlivoLive,
+      numbers,
+    };
+  }
+
+  async allocateNumber(
+    actor: AuditActor,
+    tenantId: string,
+    body: { phone: string; label?: string; kind?: "MAIN" | "AGENT" }
+  ) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+
+    const normalized = normalizePhone(body.phone);
+    if (!isE164(normalized)) {
+      throw new BadRequestError("Invalid phone number. Must be valid E.164 with country code (e.g. +911140001234).");
+    }
+
+    const existingInTenant = await telephonyNumbersRepository.findByPhone(tenantId, normalized);
+    if (existingInTenant) {
+      throw new ConflictError("This number is already allocated to this tenant.");
+    }
+
+    // Ensure tenant_telephony row exists so workspace dialing immediately activates
+    const existingCfg = await telephonyRepository.getConfig(tenantId);
+    if (!existingCfg) {
+      await db
+        .insertInto("tenant_telephony")
+        .values({
+          id: ulid(),
+          tenant_id: tenantId,
+          provider: "PLIVO",
+          account_sid: config.PLIVO_AUTH_ID || "platform_managed",
+          from_number: normalized,
+          webhook_token: ulid(),
+          status: "ACTIVE",
+          verified_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        })
+        .execute();
+    } else if (!existingCfg.from_number || body.kind === "MAIN") {
+      await db
+        .updateTable("tenant_telephony")
+        .set({
+          from_number: normalized,
+          status: "ACTIVE",
+          verified_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where("tenant_id", "=", tenantId)
+        .execute();
+    }
+
+    const numberRow = await telephonyNumbersRepository.create({
+      tenant_id: tenantId,
+      phone: normalized,
+      label: body.label || (body.kind === "AGENT" ? "Agent Line" : "Main Line"),
+      kind: body.kind ?? "MAIN",
+      assigned_user_id: null,
+    });
+
+    auditService.log(actor, "tenant.telephony_number_allocated", "tenants", {
+      tenantId,
+      resourceId: numberRow.id,
+      summary: `${actor.email} allocated virtual number ${normalized} (${numberRow.kind}) to tenant ${tenant.name}`,
+      metadata: { phone: normalized, label: numberRow.label, kind: numberRow.kind },
+    });
+
+    return numberRow;
+  }
+
+  async updateNumber(
+    actor: AuditActor,
+    tenantId: string,
+    numberId: string,
+    patch: { active?: boolean; label?: string; kind?: "MAIN" | "AGENT" }
+  ) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+
+    const updated = await telephonyNumbersRepository.update(tenantId, numberId, patch);
+    if (!updated) throw new NotFoundError("Number not found");
+
+    auditService.log(actor, "tenant.telephony_number_updated", "tenants", {
+      tenantId,
+      resourceId: numberId,
+      summary: `${actor.email} updated number ${updated.phone} for tenant ${tenant.name}`,
+      metadata: patch,
+    });
+
+    return updated;
+  }
+
+  async removeNumber(actor: AuditActor, tenantId: string, numberId: string) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+
+    const removed = await telephonyNumbersRepository.remove(tenantId, numberId);
+    if (!removed) throw new NotFoundError("Number not found");
+
+    auditService.log(actor, "tenant.telephony_number_removed", "tenants", {
+      tenantId,
+      resourceId: numberId,
+      summary: `${actor.email} removed number ${numberId} from tenant ${tenant.name}`,
+    });
+
+    return { ok: true };
+  }
+
+  async listTenantCalls(tenantId: string) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+    return telephonyRepository.listCalls(tenantId);
+  }
+
+  async getTenantCallRecording(tenantId: string, callId: string) {
+    const tenant = await tenantsRepository.findById(tenantId);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+    return telephonyService.recordingUrl(tenantId, callId);
   }
 }
 

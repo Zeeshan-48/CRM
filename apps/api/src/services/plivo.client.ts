@@ -91,19 +91,28 @@ class PlivoClientService {
     leadPhone: string;
     answerUrl: string;
     hangupUrl: string;
+    appId?: string;
   }): Promise<PlacedPlivoCall> {
     if (simulated() || !this.keyed(params.creds)) {
       return { callUuid: `sim_plivo_${ulid()}`, status: "queued", simulated: true };
     }
 
-    const payload = {
+    const payload: Record<string, any> = {
       from: params.from,
       to: params.to,
-      answer_url: params.answerUrl,
-      answer_method: "GET",
-      hangup_url: params.hangupUrl,
-      hangup_method: "POST",
     };
+
+    // Plivo rules: answer_url and app_id are mutually exclusive.
+    if (params.answerUrl) {
+      payload.answer_url = params.answerUrl;
+      payload.answer_method = "GET";
+      if (params.hangupUrl) {
+        payload.hangup_url = params.hangupUrl;
+        payload.hangup_method = "POST";
+      }
+    } else if (params.appId || config.PLIVO_APPLICATION_ID) {
+      payload.app_id = params.appId || config.PLIVO_APPLICATION_ID;
+    }
 
     const res = await fetch(`${this.base(params.creds)}/Call/`, {
       method: "POST",
@@ -185,6 +194,179 @@ class PlivoClientService {
     } catch (err) {
       logger.warn(`plivo recording download: ${String(err)}`);
       return null;
+    }
+  }
+
+  /**
+   * Programmatically create a SIP WebRTC endpoint for an agent on demand.
+   */
+  async createEndpoint(params: {
+    creds: PlivoCreds;
+    username: string;
+    password: string;
+    alias: string;
+    appId?: string;
+  }): Promise<{
+    endpointId: string;
+    username: string;
+    alias: string;
+    sipUri: string;
+  }> {
+    if (simulated() || !this.keyed(params.creds)) {
+      const suffix = Math.random().toString(36).slice(2, 8);
+      const fakeUser = `${params.username}${suffix}`;
+      const sipHost = ["phone", "plivo", "com"].join(".");
+      return {
+        endpointId: `sim_ep_${ulid()}`,
+        username: fakeUser,
+        alias: params.alias,
+        sipUri: `sip:${fakeUser}@${sipHost}`,
+      };
+    }
+
+    const payload: Record<string, any> = {
+      username: params.username,
+      password: params.password,
+      alias: params.alias,
+    };
+    if (params.appId || config.PLIVO_APPLICATION_ID) {
+      payload.app_id = params.appId || config.PLIVO_APPLICATION_ID;
+    }
+
+    const res = await fetch(`${this.base(params.creds)}/Endpoint/`, {
+      method: "POST",
+      headers: {
+        Authorization: this.authHeader(params.creds),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 300);
+      throw new Error(`Plivo createEndpoint failed (HTTP ${res.status}): ${text}`);
+    }
+
+    const data = (await res.json()) as {
+      endpoint_id: string;
+      username: string;
+      alias: string;
+      sip_uri: string;
+    };
+
+    return {
+      endpointId: String(data.endpoint_id),
+      username: String(data.username),
+      alias: String(data.alias),
+      sipUri: String(data.sip_uri),
+    };
+  }
+
+  /**
+   * Automatically configures Plivo Application with the live public webhook URLs.
+   * Completely eliminates any manual configuration in Plivo Console.
+   */
+  async syncApplicationWebhook(params: {
+    creds?: PlivoCreds;
+    appId?: string;
+    publicUrl: string;
+    webhookToken?: string;
+  }): Promise<{ ok: boolean; message?: string; error?: string }> {
+    const creds = params.creds || {
+      authId: config.PLIVO_AUTH_ID || "",
+      authToken: config.PLIVO_AUTH_TOKEN || "",
+    };
+    if (simulated() || !this.keyed(creds)) {
+      return { ok: true, message: "Simulation active - skipped Plivo cloud sync" };
+    }
+
+    const appId = params.appId || config.PLIVO_APPLICATION_ID;
+    if (!appId || !params.publicUrl) {
+      return { ok: false, error: "Missing Plivo Application ID or Public URL" };
+    }
+
+    const tokenPart = params.webhookToken ? `/${encodeURIComponent(params.webhookToken)}` : "";
+    const answerUrl = `${params.publicUrl}/api/v1/telephony/webhooks/plivo${tokenPart}/answer`;
+    const hangupUrl = `${params.publicUrl}/api/v1/telephony/webhooks/plivo${tokenPart}/hangup`;
+
+    const payload = {
+      answer_url: answerUrl,
+      answer_method: "POST",
+      hangup_url: hangupUrl,
+      hangup_method: "POST",
+      fallback_answer_url: answerUrl,
+      fallback_method: "POST",
+    };
+
+    try {
+      const res = await fetch(`${this.base(creds)}/Application/${appId}/`, {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader(creds),
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 300);
+        logger.warn(`[Plivo Cloud] Failed to sync Application ${appId} (HTTP ${res.status}): ${text}`);
+        return { ok: false, error: text };
+      }
+
+      logger.info(`[Plivo Cloud] Successfully auto-synced Application ${appId} webhooks to ${params.publicUrl}`);
+      return { ok: true, message: "Plivo Application webhooks synced successfully" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn(`[Plivo Cloud] Sync error for Application ${appId}: ${msg}`);
+      return { ok: false, error: msg };
+    }
+  }
+
+  /**
+   * Automatically links a purchased phone number to the Plivo Application.
+   */
+  async linkNumberToApplication(params: {
+    creds?: PlivoCreds;
+    phoneNumber: string;
+    appId?: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    const creds = params.creds || {
+      authId: config.PLIVO_AUTH_ID || "",
+      authToken: config.PLIVO_AUTH_TOKEN || "",
+    };
+    if (simulated() || !this.keyed(creds)) return { ok: true };
+
+    const appId = params.appId || config.PLIVO_APPLICATION_ID;
+    if (!appId) {
+      return { ok: false, error: "Missing Plivo Application ID" };
+    }
+    const cleanNumber = params.phoneNumber.replace(/[^0-9]/g, "");
+
+    try {
+      const res = await fetch(`${this.base(creds)}/Number/${cleanNumber}/`, {
+        method: "POST",
+        headers: {
+          Authorization: this.authHeader(creds),
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({ app_id: appId }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 300);
+        logger.warn(`[Plivo Cloud] Failed to link number ${cleanNumber} to App ${appId}: ${text}`);
+        return { ok: false, error: text };
+      }
+      logger.info(`[Plivo Cloud] Successfully linked number ${cleanNumber} to Application ${appId}`);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 }

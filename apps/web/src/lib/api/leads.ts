@@ -194,6 +194,7 @@ export interface CreateLeadBody {
   notes?: string;
   budget?: boolean;
   tags?: string[];
+  owner_id?: string | null;
 }
 
 export interface BulkLeadRow {
@@ -220,15 +221,34 @@ export const getAssignmentStrategies = () =>
 
 export const createLead = (body: CreateLeadBody) => apiPost<Lead>("/leads", body);
 
+export interface BulkImportResponse {
+  imported: number;
+  skipped: number;
+  async?: boolean;
+  jobId?: string;
+  total?: number;
+}
+
+export interface LeadImportJobProgress {
+  jobId: string;
+  status: "queued" | "processing" | "completed" | "failed";
+  total: number;
+  processed: number;
+  imported: number;
+  skipped: number;
+  percent: number;
+  error?: string;
+}
+
 export const bulkImportLeads = (rows: BulkLeadRow[]) =>
-  // Large imports (hundreds of rows) can take longer than the default 30s HTTP
-  // timeout, so give this request a generous ceiling, the import must never be
-  // abandoned mid-flight.
-  apiPost<{ imported: number; skipped: number }>(
+  apiPost<BulkImportResponse>(
     "/leads/bulk",
     { rows },
     { timeout: 300_000 }
   );
+
+export const getLeadImportJobStatus = (jobId: string) =>
+  apiGet<LeadImportJobProgress>(`/leads/import-jobs/${jobId}`);
 
 export const bulkLeadAction = (body: {
   ids: string[];

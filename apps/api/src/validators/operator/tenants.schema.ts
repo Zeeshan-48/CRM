@@ -71,3 +71,15 @@ export const upsertBillingProfileSchema = z.object({
   is_verified: optBool,
   invoice_settings: optRecord,
 });
+
+export const allocateTenantNumberSchema = z.object({
+  phone: reqStr("phone"),
+  label: optStr,
+  kind: z.enum(["MAIN", "AGENT"]).optional(),
+});
+
+export const updateTenantNumberSchema = z.object({
+  active: optBool,
+  label: optStr,
+  kind: z.enum(["MAIN", "AGENT"]).optional(),
+});

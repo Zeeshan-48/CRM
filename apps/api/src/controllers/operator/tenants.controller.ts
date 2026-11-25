@@ -88,3 +88,62 @@ export const saveTenantBillingProfile = async (req: Request, res: Response) => {
     message: "Tax invoice & legal profile saved successfully",
   });
 };
+
+export const getTenantTelephony = async (req: Request, res: Response) => {
+  const result = await tenantsService.getTelephony(String(req.params.id));
+  sendSuccessResponse({ res, data: result });
+};
+
+export const allocateTenantNumber = async (req: Request, res: Response) => {
+  const result = await tenantsService.allocateNumber(
+    actor(req),
+    String(req.params.id),
+    req.body ?? {}
+  );
+  sendSuccessResponse({
+    res,
+    data: result,
+    statusCode: HttpSuccessStatus.CREATED,
+    message: "Virtual number allocated to tenant",
+  });
+};
+
+export const updateTenantNumber = async (req: Request, res: Response) => {
+  const result = await tenantsService.updateNumber(
+    actor(req),
+    String(req.params.id),
+    String(req.params.numberId),
+    req.body ?? {}
+  );
+  sendSuccessResponse({
+    res,
+    data: result,
+    message: "Virtual number updated",
+  });
+};
+
+export const removeTenantNumber = async (req: Request, res: Response) => {
+  const result = await tenantsService.removeNumber(
+    actor(req),
+    String(req.params.id),
+    String(req.params.numberId)
+  );
+  sendSuccessResponse({
+    res,
+    data: result,
+    message: "Virtual number removed from tenant",
+  });
+};
+
+export const getTenantCalls = async (req: Request, res: Response) => {
+  const result = await tenantsService.listTenantCalls(String(req.params.id));
+  sendSuccessResponse({ res, data: result });
+};
+
+export const getTenantCallRecording = async (req: Request, res: Response) => {
+  const result = await tenantsService.getTenantCallRecording(
+    String(req.params.id),
+    String(req.params.callId)
+  );
+  sendSuccessResponse({ res, data: result });
+};

@@ -56,6 +56,16 @@ export const listCalls = async (req: Request, res: Response) => {
   sendSuccessResponse({ res, data: await telephonyService.listCalls(tenantId) });
 };
 
+// Returns dynamically provisioned Plivo WebRTC credentials for in-browser calling
+export const getWebRTCSession = async (req: Request, res: Response) => {
+  const { tenantId, actorId } = ctx(req);
+  sendSuccessResponse({
+    res,
+    data: await telephonyService.getWebRTCSession(tenantId, actorId),
+    message: "WebRTC session retrieved",
+  });
+};
+
 // An agent logs a call they dialed from their personal SIM (no recording).
 export const logManualCall = async (req: Request, res: Response) => {
   const { tenantId, actorId } = ctx(req);

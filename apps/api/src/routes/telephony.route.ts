@@ -3,6 +3,7 @@ import {
   addNumber,
   getConfig,
   getRecordingUrl,
+  getWebRTCSession,
   listCalls,
   listNumbers,
   logManualCall,
@@ -18,6 +19,9 @@ import { requireCapability } from "../middlewares/module.middleware";
 import { asyncHandler } from "../utils/asynchandler";
 
 const router = Router();
+
+// WebRTC in-browser softphone credentials (dynamic per-user session)
+router.get("/webrtc/session", asyncHandler(getWebRTCSession));
 
 // Config is managed by admins & managers; placing calls is open to any authenticated user.
 router.get("/", asyncHandler(getConfig));

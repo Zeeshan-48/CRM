@@ -3,6 +3,7 @@ import { LIMIT_CODES } from "../constants/modules.const";
 import { db } from "../db/connection";
 import type { lead_status } from "../db/enums";
 import { BadRequestError, ConflictError, NotFoundError } from "../errors";
+import { enqueueLeadImport, getLeadImportProgress } from "../queue/lead-import.queue";
 import identitiesRepository from "../repositories/identities.repository";
 import leadsRepository, {
   BulkCreateLeadData,
@@ -143,7 +144,7 @@ class LeadsService {
       tags?: string[];
       socials?: unknown;
       budget?: boolean;
-      owner_id?: string;
+      owner_id?: string | null;
     }
   ) {
     if (!body.name && !body.email && !body.phone) {
@@ -203,14 +204,42 @@ class LeadsService {
     const fresh = await leadsRepository.findById(lead.id, tenantId);
     let current = fresh ?? lead;
     // Auto-assign using the workspace default strategy, unless an explicit owner
-    // was supplied or a workflow already claimed the lead.
-    const assigned = await this.autoAssign(tenantId, actorId, current);
+    // was supplied (or explicitly unassigned) or a workflow already claimed the lead.
+    const assigned =
+      body.owner_id === undefined
+        ? await this.autoAssign(tenantId, actorId, current)
+        : null;
     if (assigned) current = assigned;
     return { ...withScore(current), score: score ?? storedScore(lead), automationRuns: runs.length };
   }
 
-  async bulkImport(tenantId: string, actorId: string, rows: unknown) {
+  async bulkImport(
+    tenantId: string,
+    actorId: string,
+    rows: unknown,
+    options?: { async?: boolean }
+  ) {
     if (!Array.isArray(rows) || rows.length === 0) throw new BadRequestError("rows[] required");
+
+    // Offload large imports (>50 rows) or explicitly requested async imports to BullMQ worker
+    const shouldRunAsync = options?.async ?? rows.length > 50;
+    if (shouldRunAsync) {
+      const jobId = ulid();
+      await enqueueLeadImport({
+        jobId,
+        tenantId,
+        actorId,
+        rows: rows as Record<string, unknown>[],
+      });
+      return {
+        async: true,
+        jobId,
+        message: "Lead import queued in background worker",
+        total: rows.length,
+        imported: 0,
+        skipped: 0,
+      };
+    }
 
     const currentLeads = await leadsRepository.countByTenant(tenantId);
     await entitlementsService.ensureCapacity(
@@ -299,6 +328,10 @@ class LeadsService {
       skipped,
     });
     return { imported: inserted.length, skipped };
+  }
+
+  async getImportProgress(jobId: string) {
+    return getLeadImportProgress(jobId);
   }
 
   // Best-effort background automation for freshly imported leads. Gated on cheap
@@ -530,7 +563,7 @@ class LeadsService {
   // The workspace-configured default assignment strategy (tenants.config
   // .leadAssignment.defaultStrategy). "MANUAL" (the default) means new leads are
   // left unassigned unless a workflow or explicit owner claims them.
-  private async defaultAssignmentStrategy(tenantId: string): Promise<string> {
+  async defaultAssignmentStrategy(tenantId: string): Promise<string> {
     const row = await db
       .selectFrom("tenants")
       .select("config")
@@ -551,7 +584,7 @@ class LeadsService {
   // Auto-assigns a freshly created lead using the workspace default strategy.
   // No-op (returns null) when the default is MANUAL/unset or the lead already has
   // an owner (explicit owner_id, or a workflow assigned it during lead.created).
-  private async autoAssign(
+  async autoAssign(
     tenantId: string,
     actorId: string,
     lead: LeadRow

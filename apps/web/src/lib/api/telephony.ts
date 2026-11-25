@@ -51,6 +51,12 @@ export interface PhoneCall {
   lead_id: string | null;
   contact_id: string | null;
   agent_user_id?: string | null;
+  agent_name?: string | null;
+  agent_email?: string | null;
+  lead_name?: string | null;
+  lead_company?: string | null;
+  contact_name?: string | null;
+  contact_company?: string | null;
   direction?: "INBOUND" | "OUTBOUND";
   provider?: string;
   outcome?: string | null;
@@ -60,8 +66,6 @@ export interface PhoneCall {
   to_number: string | null;
   call_status: string | null;
   duration_sec: number;
-  // Populated by the poller when a call fails: the recipient-leg reason and,
-  // when available, the Twilio Debugger error code.
   call_error: string | null;
   twilio_call_sid: string | null;
   external_call_id?: string | null;
@@ -73,8 +77,24 @@ export interface PhoneCall {
 export interface PlaceCallInput {
   leadId?: string;
   contactId?: string;
+  toPhone?: string;
+  phone?: string;
+  mode?: "WEBRTC" | "BRIDGE";
   /** Optional override; the backend uses the caller's saved profile phone when omitted. */
   agentPhone?: string;
+}
+
+export interface WebRTCSession {
+  enabled: boolean;
+  provider: string;
+  endpointId?: string;
+  username?: string;
+  password?: string;
+  callerId?: string;
+  simulated?: boolean;
+  reason?: string;
+  webhookUrl?: string | null;
+  webhookLive?: boolean;
 }
 
 export interface TelephonyNumber {
@@ -139,3 +159,6 @@ export const removeNumber = (id: string) => apiDelete<{ ok: boolean }>(`/telepho
 /** Self-service agent presence: inbound routing skips unavailable agents. */
 export const setCallAvailability = (available: boolean) =>
   apiPost<{ available_for_calls: boolean }>("/telephony/availability", { available });
+
+/** In-Browser WebRTC Softphone Session */
+export const getWebRTCSession = () => apiGet<WebRTCSession>("/telephony/webrtc/session");

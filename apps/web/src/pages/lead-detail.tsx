@@ -1227,7 +1227,11 @@ export default function LeadDetailPage() {
 
             {/* Action bar, comms on the left, lifecycle on the right */}
             <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
-              <CallButton leadId={lead.id} />
+              <CallButton
+                leadId={lead.id}
+                recipientName={lead.name}
+                recipientPhone={lead.phone ?? undefined}
+              />
               <LogCallDialog leadId={lead.id} />
               <WhatsAppButton leadId={lead.id} />
               <EmailButton

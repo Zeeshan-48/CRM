@@ -115,14 +115,12 @@ export function NumbersSection() {
         <div>
           <CardTitle className="flex items-center gap-2">
             <Hash className="size-4 text-brand" />
-            ExoPhone numbers
+            Virtual Numbers & Caller IDs
           </CardTitle>
           <CardDescription>
-            Numbers rented from Exotel, used as your caller ID. Optional: assign a
-            dedicated ExoPhone per agent so leads always see the same number, calls back
-            to it ring that agent first, and outbound volume spreads across the pool.
-            Agents receive calls on their own phones. Set those in Users &amp; Roles, not
-            here.
+            Virtual phone numbers allocated by your platform administrator or rented on your account.
+            Used as outbound Caller IDs for in-browser calling and direct inbound lines.
+            Customer calls never expose your agents' personal numbers.
           </CardDescription>
         </div>
         <Button size="sm" variant="outline" className="shrink-0" onClick={() => setAddOpen(true)}>
@@ -132,8 +130,8 @@ export function NumbersSection() {
       <CardContent>
         {numbers.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
-            No numbers yet. Validating your Exotel account adds the main ExoPhone
-            automatically; rented agent ExoPhones get added here.
+            No virtual numbers allocated yet. Ask your Super Admin to allocate a virtual number in the console,
+            or add your rented number here.
           </p>
         ) : (
           <ul className="divide-y rounded-md border">

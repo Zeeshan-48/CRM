@@ -7,6 +7,14 @@ import type { tenant_telephony, voice_calls } from "../db/types";
 export type TenantTelephonyRow = Selectable<tenant_telephony>;
 export type VoiceCallRow = Selectable<voice_calls>;
 
+export type EnrichedVoiceCallRow = VoiceCallRow & {
+  agent_name?: string | null;
+  agent_email?: string | null;
+  lead_name?: string | null;
+  contact_name?: string | null;
+  contact_company?: string | null;
+};
+
 // Call statuses Twilio will not move past, so the poller can stop checking.
 export const TERMINAL_CALL_STATUSES = ["completed", "busy", "failed", "no-answer", "canceled"];
 
@@ -203,17 +211,52 @@ class TelephonyRepository {
       .execute();
   }
 
-  async listCalls(tenantId: string, limit = 50): Promise<VoiceCallRow[]> {
-    return db
+  async listCalls(tenantId: string, limit = 50): Promise<EnrichedVoiceCallRow[]> {
+    const rows = await db
       .selectFrom("voice_calls")
-      .selectAll()
-      .where("tenant_id", "=", tenantId)
+      .leftJoin("users as agent", "agent.id", "voice_calls.agent_user_id")
+      .leftJoin("leads", "leads.id", "voice_calls.lead_id")
+      .leftJoin("contacts", "contacts.id", "voice_calls.contact_id")
+      .select([
+        "voice_calls.id",
+        "voice_calls.tenant_id",
+        "voice_calls.lead_id",
+        "voice_calls.contact_id",
+        "voice_calls.agent_user_id",
+        "voice_calls.twilio_call_sid",
+        "voice_calls.call_status",
+        "voice_calls.duration_sec",
+        "voice_calls.recording_url",
+        "voice_calls.created_at",
+        "voice_calls.updated_at",
+        "voice_calls.completed_at",
+        "voice_calls.provider",
+        "voice_calls.direction",
+        "voice_calls.from_number",
+        "voice_calls.to_number",
+        "voice_calls.external_call_id",
+        "voice_calls.outcome",
+        "voice_calls.call_error",
+        "voice_calls.summary",
+        "voice_calls.sentiment_label",
+        "voice_calls.sentiment_score",
+        "voice_calls.structured_data",
+        "voice_calls.transcript",
+        "agent.name as agent_name",
+        "agent.email as agent_email",
+        "leads.name as lead_name",
+        "contacts.name as contact_name",
+        "contacts.company as contact_company",
+      ])
+      .where("voice_calls.tenant_id", "=", tenantId)
       // Human telephony providers only: the voice-AI engine and simulated demo
       // calls share voice_calls but belong to their own surfaces.
-      .where("provider", "in", ["twilio", "exotel", "plivo", "manual"])
-      .orderBy("created_at", "desc")
+      .where("voice_calls.provider", "in", ["twilio", "exotel", "plivo", "manual"])
+      .orderBy("voice_calls.created_at", "desc")
       .limit(limit)
       .execute();
+
+    return rows as EnrichedVoiceCallRow[];
   }
 
   // Non-terminal Twilio calls for the poller, across tenants.
@@ -310,6 +353,24 @@ class TelephonyRepository {
       .where("id", "=", existing.id)
       .returningAll()
       .executeTakeFirstOrThrow();
+  }
+
+  async updateCall(
+    tenantId: string,
+    id: string,
+    patch: { recording_url?: string | null; summary?: string | null }
+  ): Promise<VoiceCallRow | undefined> {
+    const set: Record<string, unknown> = { updated_at: new Date() };
+    if (patch.recording_url !== undefined) set.recording_url = patch.recording_url;
+    if (patch.summary !== undefined) set.summary = patch.summary;
+
+    return db
+      .updateTable("voice_calls")
+      .set(set as never)
+      .where("tenant_id", "=", tenantId)
+      .where("id", "=", id)
+      .returningAll()
+      .executeTakeFirst();
   }
 
   /** The agent who last finished a call with this lead, the sticky pick. */

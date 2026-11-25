@@ -41,8 +41,8 @@ x-api-env: &api-env
   # Where the browser lands (links in emails, booking pages, OAuth and checkout returns).
   CRM_APP_URL: http://localhost:${CRM_WEB_PORT:-3570}
   OPERATOR_APP_URL: http://localhost:${CRM_CONSOLE_PORT:-3580}
-  # The API's own public base (unsubscribe links, OAuth callbacks, signed local files).
-  APP_PUBLIC_URL: http://localhost:${CRM_API_PORT:-5066}
+  # The API's own public base (unsubscribe links, OAuth callbacks, signed local files, telephony webhooks).
+  APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:${CRM_API_PORT:-5066}}
   CORS_ORIGINS: http://localhost:${CRM_WEB_PORT:-3570},http://localhost:${CRM_CONSOLE_PORT:-3580}
   # The browser talks to the API directly: no proxy hop to trust.
   TRUST_PROXY: "0"
@@ -69,6 +69,7 @@ x-api-env: &api-env
   PLIVO_AUTH_ID: ${PLIVO_AUTH_ID:-}
   PLIVO_AUTH_TOKEN: ${PLIVO_AUTH_TOKEN:-}
   PLIVO_DEFAULT_FROM_NUMBER: ${PLIVO_DEFAULT_FROM_NUMBER:-}
+  PLIVO_APPLICATION_ID: ${PLIVO_APPLICATION_ID:-}
   RAZORPAY_SIMULATE: ${RAZORPAY_SIMULATE:-true}
   STRIPE_SIMULATE: ${STRIPE_SIMULATE:-true}
   BILLING_SIMULATE: ${BILLING_SIMULATE:-true}
@@ -133,6 +134,9 @@ services:
   api:
     build: *api-build
     image: open-crm-api:local
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     command: ["node", "--enable-source-maps", "dist/index.js"]
     # Anything else in .env (provider keys, extra settings the API reads) reaches the
     # API as is; the explicit environment below wins on conflicts.

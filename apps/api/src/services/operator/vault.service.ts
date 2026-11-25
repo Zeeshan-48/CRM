@@ -8,6 +8,8 @@ import dealsRepository from "../../repositories/deals.repository";
 import financeRepository from "../../repositories/finance.repository";
 import leadsRepository from "../../repositories/leads.repository";
 import rolesRepository from "../../repositories/roles.repository";
+import storageService from "../storage.service";
+import logger from "../../utils/logger";
 import auditService, { AuditActor } from "./audit.service";
 
 const BUILTIN_ROLE_DEFS = [
@@ -71,6 +73,7 @@ export interface VaultSummary {
   invoices: { total: number; active: number; deleted: number };
   roles: { total: number; active: number; deleted: number };
   users: number;
+  recordings: { total: number; withAudio: number; totalDurationSec: number };
 }
 
 class VaultService {
@@ -87,6 +90,7 @@ class VaultService {
       invoicesStats,
       rolesStats,
       usersCount,
+      recordingsStats,
     ] = await Promise.all([
       db
         .selectFrom("leads")
@@ -156,6 +160,15 @@ class VaultService {
         .select(sql<number>`count(*)`.as("total"))
         .where(filterTenant)
         .executeTakeFirst(),
+      db
+        .selectFrom("voice_calls")
+        .select([
+          sql<number>`count(*)`.as("total"),
+          sql<number>`count(*) filter (where recording_url is not null and recording_url != '')`.as("with_audio"),
+          sql<number>`coalesce(sum(duration_sec), 0)`.as("total_duration_sec"),
+        ])
+        .where(filterTenant)
+        .executeTakeFirst(),
     ]);
 
     return {
@@ -195,13 +208,18 @@ class VaultService {
         deleted: Number(rolesStats?.deleted || 0),
       },
       users: Number(usersCount?.total || 0),
+      recordings: {
+        total: Number(recordingsStats?.total || 0),
+        withAudio: Number(recordingsStats?.with_audio || 0),
+        totalDurationSec: Number(recordingsStats?.total_duration_sec || 0),
+      },
     };
   }
 
   async getData(params: {
     tenantId?: string;
     entity: string;
-    filter?: "all" | "active" | "deleted";
+    filter?: "all" | "active" | "deleted" | "with_audio" | "completed" | string;
     q?: string;
     page?: number;
     limit?: number;
@@ -448,6 +466,98 @@ class VaultService {
         return { items, total: Number(total?.count || 0), page, limit };
       }
 
+      case "recordings": {
+        let base = db
+          .selectFrom("voice_calls")
+          .innerJoin("tenants", "tenants.id", "voice_calls.tenant_id")
+          .leftJoin("users", "users.id", "voice_calls.agent_user_id")
+          .leftJoin("leads", "leads.id", "voice_calls.lead_id")
+          .leftJoin("contacts", "contacts.id", "voice_calls.contact_id");
+
+        if (tenantId) {
+          base = base.where("voice_calls.tenant_id", "=", tenantId);
+        }
+
+        if (filter === "active" || filter === "with_audio") {
+          base = base.where((eb: any) =>
+            eb.and([
+              eb("voice_calls.recording_url", "is not", null),
+              eb("voice_calls.recording_url", "!=", ""),
+            ])
+          );
+        } else if (filter === "completed" || filter === "deleted") {
+          base = base.where("voice_calls.call_status", "=", "completed");
+        }
+
+        if (q) {
+          const s = `%${q}%`;
+          base = base.where((eb: any) =>
+            eb.or([
+              eb("voice_calls.to_number", "ilike", s),
+              eb("voice_calls.from_number", "ilike", s),
+              eb("voice_calls.id", "ilike", s),
+              eb("tenants.name", "ilike", s),
+              eb("users.name", "ilike", s),
+              eb("users.email", "ilike", s),
+              eb("leads.name", "ilike", s),
+              eb("contacts.name", "ilike", s),
+            ])
+          );
+        }
+
+        const total = await base.select(sql<number>`count(*)`.as("count")).executeTakeFirst();
+        const rawItems = await base
+          .select([
+            "voice_calls.id",
+            "voice_calls.tenant_id",
+            "tenants.name as tenant_name",
+            "voice_calls.agent_user_id",
+            "users.name as agent_name",
+            "users.email as agent_email",
+            "voice_calls.lead_id",
+            "leads.name as lead_name",
+            "voice_calls.contact_id",
+            "contacts.name as contact_name",
+            "voice_calls.direction",
+            "voice_calls.provider",
+            "voice_calls.from_number",
+            "voice_calls.to_number",
+            "voice_calls.duration_sec",
+            "voice_calls.recording_url",
+            "voice_calls.call_status",
+            "voice_calls.call_error",
+            "voice_calls.created_at",
+            "voice_calls.completed_at",
+          ])
+          .orderBy("voice_calls.created_at", "desc")
+          .limit(limit)
+          .offset(offset)
+          .execute();
+
+        const items = await Promise.all(
+          rawItems.map(async (item) => {
+            let audio_url: string | null = null;
+            if (item.recording_url) {
+              try {
+                if (item.recording_url.startsWith("http://") || item.recording_url.startsWith("https://")) {
+                  audio_url = item.recording_url;
+                } else {
+                  audio_url = await storageService.getDownloadUrl(item.recording_url, 3600);
+                }
+              } catch (e) {
+                logger.warn(`Failed to sign audio url for call ${item.id}: ${String(e)}`);
+              }
+            }
+            return {
+              ...item,
+              audio_url,
+            };
+          })
+        );
+
+        return { items, total: Number(total?.count || 0), page, limit };
+      }
+
       default:
         throw new BadRequestError(`Invalid entity: ${entity}`);
     }
@@ -550,6 +660,11 @@ class VaultService {
       }
       case "roles": {
         const res = await db.deleteFrom("roles").where("id", "=", id).where("tenant_id", "=", tenantId).executeTakeFirst();
+        numDeleted = Number(res?.numDeletedRows || 0);
+        break;
+      }
+      case "recordings": {
+        const res = await db.deleteFrom("voice_calls").where("id", "=", id).where("tenant_id", "=", tenantId).executeTakeFirst();
         numDeleted = Number(res?.numDeletedRows || 0);
         break;
       }

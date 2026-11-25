@@ -11,6 +11,12 @@ import {
   overrideEntitlement,
   saveTenantBillingProfile,
   updateTenant,
+  getTenantTelephony,
+  allocateTenantNumber,
+  updateTenantNumber,
+  removeTenantNumber,
+  getTenantCalls,
+  getTenantCallRecording,
 } from "../../controllers/operator/tenants.controller";
 import { requireSuperadmin } from "../../middlewares/operator-auth.middleware";
 import { validateBody } from "../../middlewares/validate.middleware";
@@ -23,6 +29,8 @@ import {
   overrideEntitlementSchema,
   updateTenantSchema,
   upsertBillingProfileSchema,
+  allocateTenantNumberSchema,
+  updateTenantNumberSchema,
 } from "../../validators/operator/tenants.schema";
 import { asyncHandler } from "../../utils/asynchandler";
 
@@ -73,5 +81,27 @@ router.put(
   validateBody(upsertBillingProfileSchema),
   asyncHandler(saveTenantBillingProfile)
 );
+
+// Tenant Telephony & Virtual Numbers
+router.get("/:id/telephony", asyncHandler(getTenantTelephony));
+router.post(
+  "/:id/telephony/numbers",
+  asyncHandler(requireSuperadmin),
+  validateBody(allocateTenantNumberSchema),
+  asyncHandler(allocateTenantNumber)
+);
+router.patch(
+  "/:id/telephony/numbers/:numberId",
+  asyncHandler(requireSuperadmin),
+  validateBody(updateTenantNumberSchema),
+  asyncHandler(updateTenantNumber)
+);
+router.delete(
+  "/:id/telephony/numbers/:numberId",
+  asyncHandler(requireSuperadmin),
+  asyncHandler(removeTenantNumber)
+);
+router.get("/:id/telephony/calls", asyncHandler(getTenantCalls));
+router.get("/:id/telephony/calls/:callId/recording", asyncHandler(getTenantCallRecording));
 
 export default router;

@@ -19,6 +19,8 @@ import { StatCard } from "@/components/layout/StatCard";
 import { StatusBadge } from "@/components/layout/StatusBadge";
 import { SubscriptionCard } from "@/components/tenants/SubscriptionCard";
 import { TenantBillingProfileCard } from "@/components/tenants/TenantBillingProfileCard";
+import { TenantTelephonyCard } from "@/components/tenants/TenantTelephonyCard";
+import { TenantCallRecordingsCard } from "@/components/tenants/TenantCallRecordingsCard";
 import { TransactionsCard } from "@/components/tenants/TransactionsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -388,6 +390,16 @@ export default function TenantDetailPage() {
       {/* Tax Invoice & Legal Profile */}
       <section className="reveal" style={{ animationDelay: "100ms" }}>
         <TenantBillingProfileCard tenant={tenant} canWrite={canWrite} />
+      </section>
+
+      {/* Telephony & Allocated Numbers */}
+      <section className="reveal" style={{ animationDelay: "110ms" }}>
+        <TenantTelephonyCard tenantId={id} tenantName={tenant.name} />
+      </section>
+
+      {/* Telephony Call Logs & Recordings Audit */}
+      <section className="reveal" style={{ animationDelay: "115ms" }}>
+        <TenantCallRecordingsCard tenantId={id} tenantName={tenant.name} />
       </section>
 
       {/* Admin users */}

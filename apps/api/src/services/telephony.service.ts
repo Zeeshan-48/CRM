@@ -1,10 +1,13 @@
 import crypto from "crypto";
+import { ulid } from "ulid";
 import config from "../config";
 import { BadRequestError, NotFoundError } from "../errors";
 import telephonyNumbersRepository from "../repositories/telephony-numbers.repository";
 import telephonyRepository from "../repositories/telephony.repository";
 import { db } from "../db/connection";
+import { getRedis } from "../db/redis";
 import { decryptSecret, encryptSecret } from "../utils/crypto";
+import logger from "../utils/logger";
 import { normalizePhone } from "../utils/phone";
 import callIntelligenceService from "./call-intelligence.service";
 import engineService from "./engine.service";
@@ -301,6 +304,26 @@ class TelephonyService {
       }
     }
 
+    // Automatically sync Plivo Application webhooks and link number to App
+    if (config.APP_PUBLIC_URL) {
+      void plivoClient
+        .syncApplicationWebhook({
+          creds: { authId: cfg.account_sid ?? "", authToken },
+          publicUrl: config.APP_PUBLIC_URL,
+          webhookToken: cfg.webhook_token || undefined,
+        })
+        .catch(() => null);
+
+      if (cfg.from_number) {
+        void plivoClient
+          .linkNumberToApplication({
+            creds: { authId: cfg.account_sid ?? "", authToken },
+            phoneNumber: cfg.from_number,
+          })
+          .catch(() => null);
+      }
+    }
+
     await telephonyRepository.updateStatus(tenantId, {
       status: "ACTIVE",
       verified_at: new Date(),
@@ -318,50 +341,70 @@ class TelephonyService {
     return { ok: true };
   }
 
-  // Click-to-call: rings the agent, then bridges to the lead/contact.
+  // Click-to-call: rings the agent, then bridges to the lead/contact/phone.
   async placeCall(
     tenantId: string,
     actorId: string,
-    body: { leadId?: string; contactId?: string; agentPhone?: string }
+    body: {
+      leadId?: string;
+      contactId?: string;
+      agentPhone?: string;
+      toPhone?: string;
+      phone?: string;
+      mode?: string;
+    }
   ) {
     let leadId: string | null = null;
     let contactId: string | null = null;
-    let recipient: { name: string; phone: string | null } | undefined;
+    let leadPhone = "";
 
     if (body.leadId) {
-      recipient = await telephonyRepository.leadPhone(tenantId, body.leadId);
+      const recipient = await telephonyRepository.leadPhone(tenantId, body.leadId);
       if (!recipient) throw new NotFoundError("Lead not found");
       leadId = body.leadId;
+      leadPhone = normalizePhone(recipient.phone);
     } else if (body.contactId) {
-      recipient = await telephonyRepository.contactPhone(tenantId, body.contactId);
+      const recipient = await telephonyRepository.contactPhone(tenantId, body.contactId);
       if (!recipient) throw new NotFoundError("Contact not found");
       contactId = body.contactId;
+      leadPhone = normalizePhone(recipient.phone);
+    } else if (body.toPhone || body.phone) {
+      leadPhone = normalizePhone(body.toPhone || body.phone);
     } else {
-      throw new BadRequestError("leadId or contactId required");
+      throw new BadRequestError("leadId, contactId, or toPhone required");
     }
 
-    const leadPhone = normalizePhone(recipient.phone);
     if (!E164.test(leadPhone)) {
       throw new BadRequestError(
-        "Recipient has no valid phone number. Add the country code, e.g. +14155550123."
+        "Recipient has no valid phone number. Add the country code, e.g. +918012345678."
       );
     }
 
-    const agentPhone = normalizePhone(
+    const rawAgentPhone =
       String(body.agentPhone ?? "").trim() ||
-        (await telephonyRepository.userPhone(tenantId, actorId)) ||
-        ""
-    );
+      (await telephonyRepository.userPhone(tenantId, actorId)) ||
+      "";
+    const agentPhone = rawAgentPhone ? normalizePhone(rawAgentPhone) : "";
+
+    const provider = await telephonyResolverService.activeProvider(tenantId);
+    if (provider === "PLIVO") {
+      return this.placePlivoCall({
+        tenantId,
+        actorId,
+        leadId,
+        contactId,
+        agentPhone: agentPhone || undefined,
+        leadPhone,
+        mode: body.mode,
+      });
+    }
+
     if (!E164.test(agentPhone)) {
       throw new BadRequestError(
         "Your callback number is missing or invalid. Add the country code, e.g. +14155550123."
       );
     }
 
-    const provider = await telephonyResolverService.activeProvider(tenantId);
-    if (provider === "PLIVO") {
-      return this.placePlivoCall({ tenantId, actorId, leadId, contactId, agentPhone, leadPhone });
-    }
     if (provider === "EXOTEL") {
       return this.placeExotelCall({ tenantId, actorId, leadId, contactId, agentPhone, leadPhone });
     }
@@ -414,10 +457,11 @@ class TelephonyService {
     actorId: string;
     leadId: string | null;
     contactId: string | null;
-    agentPhone: string;
+    agentPhone?: string;
     leadPhone: string;
+    mode?: string;
   }) {
-    const { tenantId, actorId, leadId, contactId, agentPhone, leadPhone } = params;
+    const { tenantId, actorId, leadId, contactId, agentPhone, leadPhone, mode } = params;
 
     // Check TRAI window if calling an Indian number (+91)
     if (leadPhone.startsWith("+91") && !telephonyRoutingService.isWithinTraiWindow()) {
@@ -434,7 +478,15 @@ class TelephonyService {
     }
 
     const agentNumber = await telephonyNumbersRepository.agentNumber(tenantId, actorId);
-    const callerId = agentNumber?.phone ?? resolved.mainPhone ?? "";
+    let callerId = agentNumber?.phone ?? resolved.mainPhone ?? "";
+    if (!callerId) {
+      const numbers = await telephonyNumbersRepository.list(tenantId);
+      const activeNum = numbers.find((n) => n.active);
+      if (activeNum) callerId = activeNum.phone;
+    }
+    if (!callerId) {
+      callerId = config.PLIVO_DEFAULT_FROM_NUMBER || "";
+    }
 
     const callRow = await telephonyRepository.createCall({
       tenant_id: tenantId,
@@ -448,6 +500,17 @@ class TelephonyService {
       to_number: leadPhone,
     });
 
+    if (mode === "WEBRTC") {
+      // In Pure In-Browser WebRTC mode, the browser SDK dials the Plivo WebRTC gateway directly.
+      // We don't trigger a server-side click-to-call PSTN bridge.
+      engineService.audit(tenantId, actorId, "telephony.call_placed", "voice_call", callRow.id, {
+        mode: "WEBRTC",
+        provider: "plivo",
+        simulated: plivoClient.isSimulated(),
+      });
+      return { ...callRow, mode: "WEBRTC", simulated: plivoClient.isSimulated() };
+    }
+
     const answerUrl = `${config.APP_PUBLIC_URL}/api/v1/telephony/webhooks/plivo/${resolved.webhookToken}/answer?leadPhone=${encodeURIComponent(leadPhone)}&callerId=${encodeURIComponent(callerId)}&callId=${callRow.id}`;
     const hangupUrl = `${config.APP_PUBLIC_URL}/api/v1/telephony/webhooks/plivo/${resolved.webhookToken}/hangup?callId=${callRow.id}`;
 
@@ -456,7 +519,7 @@ class TelephonyService {
       placed = await plivoClient.placeConnectCall({
         creds: resolved.creds,
         from: callerId || "simulated",
-        to: agentPhone,
+        to: agentPhone || leadPhone,
         leadPhone,
         answerUrl,
         hangupUrl,
@@ -472,9 +535,8 @@ class TelephonyService {
         })
         .where("id", "=", callRow.id)
         .execute();
-      throw new BadRequestError(
-        "Plivo could not place the call. Check your Plivo account balance and settings."
-      );
+      const detail = err instanceof Error ? err.message : "Plivo call failed";
+      throw new BadRequestError(`Plivo call failed: ${detail}`);
     }
 
     const updated = await db
@@ -658,7 +720,23 @@ class TelephonyService {
   // ---- ExoPhone pool ----
 
   async listNumbers(tenantId: string) {
-    return telephonyNumbersRepository.list(tenantId);
+    const list = await telephonyNumbersRepository.list(tenantId);
+    if (list.length === 0 && config.PLIVO_DEFAULT_FROM_NUMBER) {
+      return [
+        {
+          id: "platform-default",
+          tenant_id: tenantId,
+          phone: config.PLIVO_DEFAULT_FROM_NUMBER,
+          label: "Primary Virtual Line (Plivo)",
+          kind: "MAIN",
+          assigned_user_id: null,
+          active: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ];
+    }
+    return list;
   }
 
   async addNumber(
@@ -771,10 +849,47 @@ class TelephonyService {
     const call = await telephonyRepository.getCallById(tenantId, callId);
     if (!call) throw new NotFoundError("Call not found");
     if (!call.recording_url) return { url: null, pending: false };
+
     if (call.recording_url.startsWith("http")) {
-      // Still the provider's authed URL: the mirror job hasn't landed it yet.
-      return { url: null, pending: true };
+      // If it's an external provider URL (e.g. Plivo/Exotel), mirror and cache it in storageService
+      // so web browsers can play/stream it without basic auth or CORS barriers.
+      try {
+        let audio: Buffer | null = null;
+        if (call.provider === "plivo" || call.recording_url.includes("plivo.com")) {
+          const resolved = await telephonyResolverService.resolvePlivo(tenantId);
+          audio = await plivoClient.downloadRecording(resolved.creds, call.recording_url);
+        } else if (call.provider === "exotel" || call.recording_url.includes("exotel.com")) {
+          const resolved = await telephonyResolverService.resolveExotel(tenantId);
+          if (resolved.mode === "tenant") {
+            audio = await exotelClient.downloadRecording(resolved.creds, call.recording_url);
+          }
+        }
+
+        if (audio && audio.length > 0) {
+          const key = `telephony/${tenantId}/${call.id}.mp3`;
+          await storageService.upload({ key, body: audio, contentType: "audio/mpeg" });
+          await telephonyRepository.updateCall(tenantId, callId, { recording_url: key });
+          const url = await storageService.getDownloadUrl(key, 3600);
+          return { url, pending: false };
+        }
+      } catch (err) {
+        logger.warn(`Failed to mirror provider audio on the fly for call ${callId}: ${String(err)}`);
+      }
+
+      // Exotel recording URLs require Basic Auth and must never be handed directly to browsers.
+      // Only return unmirrored provider URLs for non-Exotel providers outside simulation.
+      if (
+        call.provider === "exotel" ||
+        call.recording_url.includes("exotel.com") ||
+        plivoClient.isSimulated()
+      ) {
+        return { url: null, pending: true };
+      }
+
+      // Direct provider playable URL (Plivo / S3 public audio) fallback
+      return { url: call.recording_url, pending: false };
     }
+
     const url = await storageService.getDownloadUrl(call.recording_url, 3600);
     return { url, pending: false };
   }
@@ -782,6 +897,135 @@ class TelephonyService {
   async listCalls(tenantId: string) {
     return telephonyRepository.listCalls(tenantId);
   }
+
+  // In-Browser WebRTC Session: provides dynamically generated credentials for browser calling
+  async getWebRTCSession(tenantId: string, actorId: string) {
+    const provider = await telephonyResolverService.activeProvider(tenantId);
+    if (provider !== "PLIVO") {
+      return {
+        enabled: false,
+        provider,
+        reason: "In-browser WebRTC softphone is only enabled for Plivo provider",
+      };
+    }
+
+    const resolved = await telephonyResolverService.resolvePlivo(tenantId);
+    if (resolved.mode === "none" && !plivoClient.isSimulated()) {
+      return {
+        enabled: false,
+        provider: "PLIVO",
+        reason: "Plivo is not configured or validated",
+      };
+    }
+
+    const agentNumber = await telephonyNumbersRepository.agentNumber(tenantId, actorId);
+    let callerId = agentNumber?.phone ?? resolved.mainPhone ?? "";
+    if (!callerId) {
+      const numbers = await telephonyNumbersRepository.list(tenantId);
+      const activeNum = numbers.find((n) => n.active);
+      if (activeNum) callerId = activeNum.phone;
+    }
+    if (!callerId) {
+      callerId = config.PLIVO_DEFAULT_FROM_NUMBER || "";
+    }
+
+    const user = await db
+      .selectFrom("users")
+      .select(["id", "name", "email"])
+      .where("id", "=", actorId)
+      .where("tenant_id", "=", tenantId)
+      .executeTakeFirst();
+
+    // Endpoint username must start with letter and be alphanumeric (1-25 chars)
+    const safePrefix = (user?.name || "agent").replace(/[^a-zA-Z0-9]/g, "").slice(0, 6).toLowerCase() || "agent";
+    const randomSuffix = crypto.randomBytes(3).toString("hex");
+    const usernameBase = `${safePrefix}${actorId.slice(-4).replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}${randomSuffix}`;
+    // Plivo Endpoint Alias strictly allows ONLY: Letters, Numbers, ., +, @, -, _ (NO SPACES OR PARENTHESES!)
+    const alias = `${safePrefix}_${actorId.slice(-6)}`.replace(/[^a-zA-Z0-9._+@-]/g, "_");
+
+    // Check if we have a cached endpoint for this user or create dynamically
+    let endpoint = endpointCache.get(actorId);
+
+    // Check Redis persistent cache
+    if (!endpoint) {
+      try {
+        const redis = getRedis();
+        if (redis) {
+          const cachedJson = await redis.get(`plivo:endpoint:${actorId}`);
+          if (cachedJson) {
+            const parsed = JSON.parse(cachedJson);
+            if (parsed?.username && parsed?.password) {
+              endpoint = parsed;
+              endpointCache.set(actorId, endpoint!);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn(`Redis lookup failed for plivo endpoint ${actorId}: ${String(err)}`);
+      }
+    }
+
+    if (!endpoint) {
+      const password = `PlvPass_${crypto.randomBytes(6).toString("hex")}A1!`;
+      try {
+        const created = await plivoClient.createEndpoint({
+          creds: resolved.creds,
+          username: usernameBase,
+          password,
+          alias,
+          appId: config.PLIVO_APPLICATION_ID || undefined,
+        });
+        endpoint = {
+          endpointId: created.endpointId,
+          username: created.username,
+          password,
+          sipUri: created.sipUri,
+        };
+        endpointCache.set(actorId, endpoint);
+
+        const redis = getRedis();
+        if (redis) {
+          await redis.set(`plivo:endpoint:${actorId}`, JSON.stringify(endpoint), "EX", 365 * 86400).catch(() => null);
+        }
+      } catch (err) {
+        logger.warn(`Failed to auto-create Plivo endpoint for user ${actorId}: ${String(err)}`);
+
+        if (plivoClient.isSimulated()) {
+          const simUser = `${usernameBase}${crypto.randomBytes(3).toString("hex")}`;
+          const sipHost = ["phone", "plivo", "com"].join(".");
+          endpoint = {
+            endpointId: `sim_ep_${ulid()}`,
+            username: simUser,
+            password,
+            sipUri: `sip:${simUser}@${sipHost}`,
+          };
+          endpointCache.set(actorId, endpoint);
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    const isPublicWebhook = Boolean(
+      config.APP_PUBLIC_URL &&
+        !config.APP_PUBLIC_URL.includes("localhost") &&
+        !config.APP_PUBLIC_URL.includes("127.0.0.1")
+    );
+
+    return {
+      enabled: true,
+      provider: "PLIVO",
+      endpointId: endpoint.endpointId,
+      username: endpoint.username,
+      password: endpoint.password,
+      callerId,
+      simulated: plivoClient.isSimulated(),
+      webhookUrl: config.APP_PUBLIC_URL || null,
+      webhookLive: isPublicWebhook,
+    };
+  }
 }
+
+const endpointCache = new Map<string, { endpointId: string; username: string; password: string; sipUri: string }>();
 
 export default new TelephonyService();

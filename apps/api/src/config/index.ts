@@ -164,6 +164,7 @@ const config = {
   PLIVO_AUTH_ID: process.env.PLIVO_AUTH_ID ?? "",
   PLIVO_AUTH_TOKEN: process.env.PLIVO_AUTH_TOKEN ?? "",
   PLIVO_DEFAULT_FROM_NUMBER: process.env.PLIVO_DEFAULT_FROM_NUMBER ?? "",
+  PLIVO_APPLICATION_ID: process.env.PLIVO_APPLICATION_ID ?? "",
   PLIVO_SIMULATE:
     process.env.PLIVO_SIMULATE !== undefined
       ? process.env.PLIVO_SIMULATE === "true"

@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import type { lead_grade, lead_status } from "../db/enums";
-import { ForbiddenError } from "../errors";
+import { ForbiddenError, NotFoundError } from "../errors";
 import activityEventsService from "../services/activity-events.service";
 import engagementService from "../services/engagement.service";
 import leadsService from "../services/leads.service";
@@ -107,12 +107,23 @@ export const createLead = async (req: Request, res: Response) => {
 
 export const bulkImport = async (req: Request, res: Response) => {
   const { tenantId, actorId } = ctx(req);
-  const result = await leadsService.bulkImport(tenantId, actorId, req.body?.rows);
+  const asyncRequested = req.query.async === "true" || (Array.isArray(req.body?.rows) && req.body.rows.length > 50);
+  const result = await leadsService.bulkImport(tenantId, actorId, req.body?.rows, { async: asyncRequested });
   sendSuccessResponse({
     res,
     data: result,
     statusCode: HttpSuccessStatus.CREATED,
-    message: "Leads imported",
+    message: (result as any)?.async ? "Lead import job started in background" : "Leads imported",
+  });
+};
+
+export const getImportJobStatus = async (req: Request, res: Response) => {
+  const status = await leadsService.getImportProgress(String(req.params.jobId));
+  if (!status) throw new NotFoundError("Import job not found");
+  sendSuccessResponse({
+    res,
+    data: status,
+    message: "Import job status",
   });
 };
 

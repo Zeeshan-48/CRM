@@ -9,6 +9,7 @@ export interface VaultSummary {
   invoices: { total: number; active: number; deleted: number };
   roles: { total: number; active: number; deleted: number };
   users: number;
+  recordings?: { total: number; withAudio: number; totalDurationSec: number };
 }
 
 export interface VaultDataResult<T = any> {

@@ -5,14 +5,15 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
-  Bookmark,
   ChevronLeft,
   ChevronRight,
   Download,
   FileSpreadsheet,
   FileUp,
+  Loader2,
   Plus,
   Search,
+  Sparkles,
   Tag,
   Trash2,
   Upload,
@@ -25,29 +26,28 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
+  assignLead,
   bulkImportLeads,
   bulkLeadAction,
   createLead,
   downloadLeadsCsv,
+  getLeadImportJobStatus,
   getLeadSources,
   getLeadTags,
   listLeads,
+  updateLead,
   LEAD_GRADES,
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
   type BulkLeadRow,
   type Lead,
   type LeadGrade,
+  type LeadImportJobProgress,
 } from "@/lib/api/leads";
 import { getTenantMe } from "@/lib/api/tenant";
 import { listUsers } from "@/lib/api/users";
-import {
-  createView,
-  deleteView,
-  listViews,
-  type SavedView,
-} from "@/lib/api/views";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/format";
+import { useAuthStore } from "@/stores/auth-store";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/layout/EmptyState";
@@ -381,10 +381,6 @@ export default function LeadsPage() {
     "leads:filters",
     EMPTY_FILTERS,
   );
-  const [appliedViewId, setAppliedViewId] = usePersistentState<string | null>(
-    "leads:viewId",
-    null,
-  );
   // Seed the page from the URL so returning from a lead's detail page (via the
   // back button) lands on the page the user left, not page 1.
   const [page, setPage] = React.useState(() => {
@@ -439,13 +435,11 @@ export default function LeadsPage() {
 
   const patchFilters = (patch: Partial<Filters>) => {
     setFilters((prev) => ({ ...prev, ...patch }));
-    setAppliedViewId(null);
   };
 
   const clearFilters = () => {
     setSearch("");
     setFilters(EMPTY_FILTERS);
-    setAppliedViewId(null);
   };
 
   // Keep the *range keys* (not resolved timestamps) in the query key so it's
@@ -508,11 +502,6 @@ export default function LeadsPage() {
     queryFn: listUsers,
     staleTime: 5 * 60 * 1000,
   });
-  const viewsQuery = useQuery({
-    queryKey: ["views", "leads"],
-    queryFn: () => listViews("leads"),
-    staleTime: 5 * 60 * 1000,
-  });
   // Drives the bulk-assign flow: when the workspace runs on MANUAL assignment,
   // the picker forces choosing a person; otherwise "Auto-assign" stays available.
   const tenantQuery = useQuery({
@@ -545,6 +534,40 @@ export default function LeadsPage() {
     () => (usersQuery.data ?? []).filter((u) => u.status === "ACTIVE"),
     [usersQuery.data],
   );
+
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserRole = useAuthStore((s) => s.user?.role);
+  const isElevated = currentUserRole === "ADMIN" || currentUserRole === "MANAGER";
+  const canReassignLead = (lead: Lead) =>
+    lead.status !== "DISQUALIFIED" && (isElevated || !lead.owner_id || lead.owner_id === currentUserId);
+
+  const [assigningLeadId, setAssigningLeadId] = React.useState<string | null>(null);
+
+  const handleQuickAssign = async (lead: Lead, val: string) => {
+    if (val === (lead.owner_id ?? UNASSIGNED)) return;
+    setAssigningLeadId(lead.id);
+    try {
+      if (val === AUTO_ASSIGN) {
+        const res = await assignLead(lead.id, { strategy: defaultStrategy });
+        toast.success(
+          `Assigned ${lead.name} to ${res.owner.name} (${STRATEGY_LABELS[res.strategy] ?? res.strategy})`,
+          { description: res.reason }
+        );
+      } else if (val === UNASSIGNED) {
+        await updateLead(lead.id, { owner_id: null });
+        toast.success(`Unassigned ${lead.name}`);
+      } else {
+        const targetUser = assignableUsers.find((u) => u.id === val);
+        await assignLead(lead.id, { strategy: "MANUAL", ownerId: val });
+        toast.success(`Assigned ${lead.name} to ${targetUser?.name ?? "agent"}`);
+      }
+      invalidateLeads();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to assign lead");
+    } finally {
+      setAssigningLeadId(null);
+    }
+  };
 
   const hasActiveFilters =
     !!debouncedQ ||
@@ -580,7 +603,6 @@ export default function LeadsPage() {
   // ---- Dialog state ----
   const [newLeadOpen, setNewLeadOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
-  const [saveViewOpen, setSaveViewOpen] = React.useState(false);
   const [tagOpen, setTagOpen] = React.useState(false);
   const [assignOpen, setAssignOpen] = React.useState(false);
   const [assignOwnerId, setAssignOwnerId] = React.useState("");
@@ -592,6 +614,7 @@ export default function LeadsPage() {
     city: "",
     source: "",
     notes: "",
+    owner_id: AUTO_ASSIGN,
   });
   // CSV import: a file drop/upload is the primary path; pasting is kept as a
   // fallback. Both funnel through `parseImportText` into `importParsed`.
@@ -601,7 +624,6 @@ export default function LeadsPage() {
   const [importDragging, setImportDragging] = React.useState(false);
   const [showPaste, setShowPaste] = React.useState(false);
   const importInputRef = React.useRef<HTMLInputElement>(null);
-  const [viewName, setViewName] = React.useState("");
   const [tagValue, setTagValue] = React.useState("");
   const [exporting, setExporting] = React.useState(false);
 
@@ -627,6 +649,7 @@ export default function LeadsPage() {
         city: "",
         source: "",
         notes: "",
+        owner_id: AUTO_ASSIGN,
       });
       invalidateLeads();
     },
@@ -645,10 +668,56 @@ export default function LeadsPage() {
   const [importSuccess, setImportSuccess] = React.useState<number | null>(null);
   const [importSkipped, setImportSkipped] = React.useState(0);
   const [importFailed, setImportFailed] = React.useState<string | null>(null);
+  const [activeImportJobId, setActiveImportJobId] = React.useState<string | null>(null);
+  const [importJobProgress, setImportJobProgress] = React.useState<LeadImportJobProgress | null>(null);
+
+  React.useEffect(() => {
+    if (!activeImportJobId) return;
+    let timer: NodeJS.Timeout;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await getLeadImportJobStatus(activeImportJobId);
+        if (cancelled) return;
+        setImportJobProgress(res);
+
+        if (res.status === "completed") {
+          setActiveImportJobId(null);
+          setImportOpen(false);
+          resetImport();
+          invalidateLeads();
+          setImportSkipped(res.skipped);
+          setImportSuccess(res.imported);
+          toast.success(`Import complete: ${res.imported} leads added!`);
+        } else if (res.status === "failed") {
+          setActiveImportJobId(null);
+          setImportFailed(res.error || "Lead import failed in background worker.");
+        } else {
+          timer = setTimeout(poll, 1000);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          timer = setTimeout(poll, 2000);
+        }
+      }
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [activeImportJobId, invalidateLeads, resetImport]);
 
   const importMutation = useMutation({
     mutationFn: bulkImportLeads,
     onSuccess: (result) => {
+      if (result.async && result.jobId) {
+        setActiveImportJobId(result.jobId);
+        toast.info("Import queued in background worker...", { duration: 3000 });
+        return;
+      }
       setImportOpen(false);
       resetImport();
       invalidateLeads();
@@ -804,46 +873,6 @@ export default function LeadsPage() {
     bulkMutation.mutate({ ids: selectedIds, action: "assign", ownerId });
   };
 
-  const saveViewMutation = useMutation({
-    mutationFn: createView,
-    onSuccess: (view) => {
-      toast.success(`View "${view.name}" saved`);
-      setSaveViewOpen(false);
-      setViewName("");
-      setAppliedViewId(view.id);
-      queryClient.invalidateQueries({ queryKey: ["views", "leads"] });
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const deleteViewMutation = useMutation({
-    mutationFn: deleteView,
-    onSuccess: (_result, viewId) => {
-      toast.success("View deleted");
-      if (appliedViewId === viewId) setAppliedViewId(null);
-      queryClient.invalidateQueries({ queryKey: ["views", "leads"] });
-    },
-    onError: (error: Error) => toast.error(error.message),
-  });
-
-  const applyView = (view: SavedView) => {
-    const f = view.filters ?? {};
-    setSearch(f.q ?? "");
-    setFilters({
-      q: f.q ?? "",
-      source: f.source ?? "",
-      tag: f.tag ?? "",
-      status: f.status ?? "",
-      owner: f.owner ?? "",
-      grade: f.grade ?? "",
-      createdRange: f.createdRange ?? "",
-      activityRange: f.activityRange ?? "",
-      activityFrom: f.activityFrom ?? "",
-      activityTo: f.activityTo ?? "",
-    });
-    setAppliedViewId(view.id);
-  };
-
   const handleExport = async (ids?: string[]) => {
     setExporting(true);
     try {
@@ -881,55 +910,10 @@ export default function LeadsPage() {
         }
       />
 
-      {/* Saved views */}
-      <div
-        className="reveal flex flex-wrap items-center gap-2"
-        style={{ animationDelay: "40ms" }}
-      >
-        <Bookmark className="size-4 text-muted-foreground" />
-        {viewsQuery.isLoading ? (
-          <Skeleton className="h-7 w-40" />
-        ) : (
-          <>
-            {(viewsQuery.data ?? []).map((view) => (
-              <span
-                key={view.id}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md border px-3 py-1 text-xs font-medium transition-colors duration-120",
-                  appliedViewId === view.id
-                    ? "border-brand/40 bg-brand/10 text-brand"
-                    : "bg-card text-muted-foreground hover:bg-muted",
-                )}
-              >
-                <button type="button" onClick={() => applyView(view)}>
-                  {view.name}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete view ${view.name}`}
-                  className="rounded-sm p-0.5 opacity-60 transition-opacity hover:opacity-100"
-                  onClick={() => deleteViewMutation.mutate(view.id)}
-                >
-                  <X className="size-3" />
-                </button>
-              </span>
-            ))}
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 rounded-md border border-dashed px-3 py-1 text-xs font-medium text-muted-foreground transition-colors duration-120 hover:bg-muted"
-              onClick={() => setSaveViewOpen(true)}
-            >
-              <Plus className="size-3" />
-              Save view
-            </button>
-          </>
-        )}
-      </div>
-
       {/* Filter bar */}
       <div
         className="reveal flex flex-wrap items-center gap-2"
-        style={{ animationDelay: "80ms" }}
+        style={{ animationDelay: "40ms" }}
       >
         <div className="relative w-full sm:w-auto sm:min-w-[220px] sm:flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -937,10 +921,7 @@ export default function LeadsPage() {
             placeholder="Search name, email, phone..."
             className="pl-9"
             value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setAppliedViewId(null);
-            }}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
@@ -1305,8 +1286,68 @@ export default function LeadsPage() {
                           {LEAD_STATUS_LABELS[lead.status] ?? lead.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {ownerName(lead.owner_id)}
+                      <TableCell
+                        className="whitespace-nowrap text-muted-foreground"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {lead.status === "DISQUALIFIED" ? (
+                          <span className="text-xs text-muted-foreground italic">Disqualified</span>
+                        ) : canReassignLead(lead) ? (
+                          <div className="w-fit min-w-[130px]">
+                            <Select
+                              value={lead.owner_id ?? UNASSIGNED}
+                              onValueChange={(val) => handleQuickAssign(lead, val)}
+                              disabled={assigningLeadId === lead.id}
+                            >
+                              <SelectTrigger
+                                className="h-7 text-xs border-muted/70 bg-background/60 hover:bg-accent/40 px-2 py-0.5 gap-1 focus:ring-1 focus:ring-brand font-normal"
+                                aria-label={`Assign owner for ${lead.name}`}
+                              >
+                                {assigningLeadId === lead.id ? (
+                                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                                    <Loader2 className="size-3 animate-spin" />
+                                    <span>Saving...</span>
+                                  </span>
+                                ) : (
+                                  <SelectValue>
+                                    <span
+                                      className={
+                                        lead.owner_id
+                                          ? "text-foreground font-medium"
+                                          : "text-muted-foreground italic"
+                                      }
+                                    >
+                                      {ownerName(lead.owner_id)}
+                                    </span>
+                                  </SelectValue>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent onClick={(e) => e.stopPropagation()}>
+                                <SelectItem value={AUTO_ASSIGN} className="text-xs">
+                                  <span className="flex items-center gap-1.5">
+                                    <Sparkles className="size-3 text-brand" />
+                                    <span>
+                                      Auto-assign ({STRATEGY_LABELS[defaultStrategy] ?? defaultStrategy})
+                                    </span>
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value={UNASSIGNED} className="text-xs">
+                                  <span className="text-muted-foreground">Unassigned</span>
+                                </SelectItem>
+                                {assignableUsers.map((user) => (
+                                  <SelectItem key={user.id} value={user.id} className="text-xs">
+                                    {user.name}{" "}
+                                    <span className="text-[10px] text-muted-foreground">
+                                      ({user.role})
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <span>{ownerName(lead.owner_id)}</span>
+                        )}
                       </TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {formatDate(lead.created_at)}
@@ -1481,6 +1522,28 @@ export default function LeadsPage() {
               </div>
             </div>
             <div className="grid gap-1.5">
+              <Label htmlFor="lead-owner">Assign to</Label>
+              <Select
+                value={newLead.owner_id}
+                onValueChange={(v) => setNewLead({ ...newLead, owner_id: v })}
+              >
+                <SelectTrigger id="lead-owner">
+                  <SelectValue placeholder="Choose assignee" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={AUTO_ASSIGN}>
+                    Auto-assign ({STRATEGY_LABELS[defaultStrategy] ?? defaultStrategy})
+                  </SelectItem>
+                  <SelectItem value={UNASSIGNED}>Unassigned</SelectItem>
+                  {assignableUsers.map((user) => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name} ({user.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
               <Label htmlFor="lead-notes">Notes</Label>
               <Textarea
                 id="lead-notes"
@@ -1509,6 +1572,12 @@ export default function LeadsPage() {
                   city: newLead.city || undefined,
                   source: newLead.source || undefined,
                   notes: newLead.notes || undefined,
+                  owner_id:
+                    newLead.owner_id === AUTO_ASSIGN || !newLead.owner_id
+                      ? undefined
+                      : newLead.owner_id === UNASSIGNED
+                        ? null
+                        : newLead.owner_id,
                 })
               }
             >
@@ -1550,7 +1619,36 @@ export default function LeadsPage() {
               so a file landing near, but not exactly on, the dashed box is
               still caught, and a window-level guard stops the browser opening the
               file on a true miss outside the dialog. */}
-          <div ref={dropZoneRef} className="space-y-4">
+          {activeImportJobId ? (
+            <div className="py-6 space-y-4">
+              <div className="flex items-center justify-between text-sm font-medium">
+                <span className="flex items-center gap-2 text-foreground">
+                  <Loader2 className="size-4 animate-spin text-brand" />
+                  Processing {importJobProgress?.total ?? 0} leads in background...
+                </span>
+                <span className="font-mono text-brand font-semibold">
+                  {importJobProgress?.percent ?? 0}%
+                </span>
+              </div>
+
+              <div className="h-3 w-full overflow-hidden rounded-full bg-secondary/80 p-0.5">
+                <div
+                  className="h-full rounded-full bg-brand transition-all duration-300"
+                  style={{ width: `${importJobProgress?.percent ?? 0}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Processed: {importJobProgress?.processed ?? 0} / {importJobProgress?.total ?? 0}</span>
+                <span>Imported: {importJobProgress?.imported ?? 0} • Skipped: {importJobProgress?.skipped ?? 0}</span>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground bg-muted/40 p-3 rounded-lg border border-border/50">
+                The BullMQ background worker is validating duplicates, computing AI lead scores, and executing auto-assignment rules. You may safely close this dialog; the worker will continue processing in the background.
+              </p>
+            </div>
+          ) : (
+            <div ref={dropZoneRef} className="space-y-4">
             {/* Dropzone */}
             <button
               type="button"
@@ -1711,26 +1809,35 @@ export default function LeadsPage() {
               />
             ) : null}
           </div>
+          )}
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              loading={importMutation.isPending}
-              disabled={importMutation.isPending || !importParsed || importParsed.rows.length === 0}
-              onClick={() => {
-                if (!importParsed || importParsed.rows.length === 0) {
-                  toast.error("No valid rows found");
-                  return;
-                }
-                importMutation.mutate(importParsed.rows);
-              }}
-            >
-              {importParsed && importParsed.rows.length > 0
-                ? `Import ${importParsed.rows.length} ${importParsed.rows.length === 1 ? "lead" : "leads"}`
-                : "Import leads"}
-            </Button>
+            {activeImportJobId ? (
+              <Button variant="outline" onClick={() => setImportOpen(false)}>
+                Close (Continue in background)
+              </Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setImportOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  loading={importMutation.isPending}
+                  disabled={importMutation.isPending || !importParsed || importParsed.rows.length === 0}
+                  onClick={() => {
+                    if (!importParsed || importParsed.rows.length === 0) {
+                      toast.error("No valid rows found");
+                      return;
+                    }
+                    importMutation.mutate(importParsed.rows);
+                  }}
+                >
+                  {importParsed && importParsed.rows.length > 0
+                    ? `Import ${importParsed.rows.length} ${importParsed.rows.length === 1 ? "lead" : "leads"}`
+                    : "Import leads"}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1768,62 +1875,6 @@ export default function LeadsPage() {
         description={importFailed}
         actionLabel="Close"
       />
-
-      {/* Save view dialog */}
-      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save current view</DialogTitle>
-            <DialogDescription>
-              Saves the current search and filters as a one-click view.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-1.5">
-            <Label htmlFor="view-name">View name</Label>
-            <Input
-              id="view-name"
-              value={viewName}
-              onChange={(e) => setViewName(e.target.value)}
-              placeholder="Hot webinar leads"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSaveViewOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={saveViewMutation.isPending || !viewName.trim()}
-              onClick={() =>
-                saveViewMutation.mutate({
-                  resource: "leads",
-                  name: viewName.trim(),
-                  filters: {
-                    ...(debouncedQ ? { q: debouncedQ } : {}),
-                    ...(filters.source ? { source: filters.source } : {}),
-                    ...(filters.status ? { status: filters.status } : {}),
-                    ...(filters.owner ? { owner: filters.owner } : {}),
-                    ...(filters.grade ? { grade: filters.grade } : {}),
-                    ...(filters.createdRange
-                      ? { createdRange: filters.createdRange }
-                      : {}),
-                    ...(filters.activityRange
-                      ? { activityRange: filters.activityRange }
-                      : {}),
-                    ...(filters.activityFrom
-                      ? { activityFrom: filters.activityFrom }
-                      : {}),
-                    ...(filters.activityTo
-                      ? { activityTo: filters.activityTo }
-                      : {}),
-                  },
-                })
-              }
-            >
-              Save view
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Tag dialog */}
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>

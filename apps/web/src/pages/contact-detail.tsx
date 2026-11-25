@@ -583,7 +583,11 @@ export default function ContactDetailPage() {
 
             {/* Action bar, comms on the left, lifecycle on the right */}
             <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-4">
-              <CallButton contactId={contact.id} />
+              <CallButton
+                contactId={contact.id}
+                recipientName={contact.name}
+                recipientPhone={contact.phone ?? undefined}
+              />
               <LogCallDialog contactId={contact.id} />
               <WhatsAppButton contactId={contact.id} />
               <EmailButton

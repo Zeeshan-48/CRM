@@ -9,6 +9,7 @@ import {
   createLead,
   deleteLead,
   exportCsv,
+  getImportJobStatus,
   getInsight,
   getLead,
   getScore,
@@ -43,6 +44,7 @@ router.get("/tags", asyncHandler(listTags));
 router.get("/assignment-strategies", asyncHandler(listAssignmentStrategies));
 router.post("/bulk-action", validateBody(bulkActionSchema), asyncHandler(bulkAction));
 router.get("/export.csv", asyncHandler(exportCsv));
+router.get("/import-jobs/:jobId", asyncHandler(getImportJobStatus));
 router.post("/bulk", validateBody(bulkImportSchema), asyncHandler(bulkImport));
 router.post("/", validateBody(createLeadSchema), asyncHandler(createLead));
 
