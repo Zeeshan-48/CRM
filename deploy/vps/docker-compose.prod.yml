@@ -3,11 +3,11 @@
 # ==============================================================================
 # Self-contained production stack for a single VPS (Ubuntu 22.04 / 24.04 LTS).
 # Runs Postgres, Redis (password-protected), REST API (read-only rootfs),
-# Web App, Operator Console, and Edge Nginx (auto HTTP bootstrap -> TLS HTTPS).
+# Web App, Operator Console, and Edge Nginx.
 #
-# First deploy & SSL issuance:
-#   chmod +x deploy/vps/scripts/*.sh
-#   ./deploy/vps/scripts/init-ssl.sh
+# Default (EDGE_MODE=proxy):
+#   Exposes loopback-only 127.0.0.1:${EDGE_PORT:-7008} for the host Nginx/Caddy
+#   HTTPS reverse proxy (ports 80/443 already owned by host reverse proxy).
 # ==============================================================================
 
 name: bn-orbit-prod
@@ -100,7 +100,7 @@ services:
       PG_DATABASE_HOST: postgres
       PG_DATABASE_PORT: "5432"
       REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
-      TRUST_PROXY: "1"
+      TRUST_PROXY: ${TRUST_PROXY:-1}
       LOCAL_STORAGE_DIR: /app/.local-storage
     volumes:
       - files:/app/.local-storage
@@ -148,7 +148,7 @@ services:
     networks:
       - internal-net
 
-  # ---- 7. Edge Nginx Reverse Proxy (ACME Bootstrap -> TLS & Domain Routing) ----
+  # ---- 7. Edge Nginx Reverse Proxy (Loopback Port 7008 by default) ----
   edge-nginx:
     image: nginx:1.27-alpine
     container_name: bn-orbit-edge-nginx
@@ -156,9 +156,9 @@ services:
       - no-new-privileges:true
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "${EDGE_BIND_IP:-127.0.0.1}:${EDGE_PORT:-7008}:80"
     environment:
+      EDGE_MODE: ${EDGE_MODE:-proxy}
       CRM_DOMAIN: ${CRM_DOMAIN:?Set CRM_DOMAIN in .env.prod}
       CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?Set CONSOLE_DOMAIN in .env.prod}
     volumes:
