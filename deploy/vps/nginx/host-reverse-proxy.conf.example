@@ -1,18 +1,18 @@
 # ==============================================================================
 # Host VPS Nginx Reverse Proxy Example (/etc/nginx/sites-available/bn-orbit.conf)
 # ==============================================================================
-# Use this when your VPS already runs Nginx on ports 80/443 and Docker exposes
-# Bn Orbit strictly on loopback 127.0.0.1:7008 (EDGE_MODE=proxy).
+# Single-domain setup: forwards HTTPS traffic for crm.example.com (CRM at / and
+# Super Admin Console at /console/) cleanly to Docker loopback 127.0.0.1:7008.
 #
-# After copying & replacing crm.example.com / console.example.com:
-#   sudo ln -s /etc/nginx/sites-available/bn-orbit.conf /etc/nginx/sites-enabled/
+# After copying & replacing crm.example.com:
+#   sudo ln -sf /etc/nginx/sites-available/bn-orbit.conf /etc/nginx/sites-enabled/bn-orbit.conf
 #   sudo nginx -t && sudo systemctl reload nginx
-#   sudo certbot --nginx -d crm.example.com -d console.example.com
+#   sudo certbot --nginx --hsts --redirect -d crm.example.com
 # ==============================================================================
 
 server {
     listen 80;
-    server_name crm.example.com console.example.com;
+    server_name crm.example.com;
 
     client_max_body_size 50M;
 

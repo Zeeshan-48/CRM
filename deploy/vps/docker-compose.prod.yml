@@ -137,6 +137,7 @@ services:
       dockerfile: infra/docker/console.Dockerfile
       args:
         VITE_API_BASE_URL: /api/v1/operator
+        VITE_BASE_PATH: ${CONSOLE_BASE_PATH:-/console/}
     image: bn-orbit-console:prod
     container_name: bn-orbit-console
     security_opt:

@@ -2,6 +2,10 @@
 
 This folder runs **Bn Orbit** on an Ubuntu VPS (Ubuntu 22.04 / 24.04 LTS) with Docker, Edge Nginx on loopback port **`7008`**, authenticated Redis, read-only API container filesystem, and daily Postgres + media backups.
 
+By default it runs in **Single-Domain Host-Proxy Mode (`EDGE_MODE=proxy`)**:
+- Main CRM App: `https://crm.example.com/`
+- Super Admin Operator Console: `https://crm.example.com/console/`
+
 ---
 
 ## 1. Directory Structure
@@ -12,9 +16,10 @@ deploy/vps/
 ├── nginx/
 │   ├── nginx.conf                          # Reference SSL config
 │   ├── host-reverse-proxy.conf.example     # Host Nginx site forwarding HTTPS -> 127.0.0.1:7008
-│   ├── render-and-run.sh                   # Renders proxy vs SSL Nginx config at startup
+│   ├── render-and-run.sh                   # Renders single/dual-domain Nginx config at startup
 │   └── templates/
-│       ├── nginx.proxy.conf.template       # Default host-proxy mode (127.0.0.1:7008)
+│       ├── nginx.proxy.conf.template       # Default host-proxy mode (CRM at /, Console at /console/)
+│       ├── console.subdomain.proxy.conf.template # Optional separate console subdomain
 │       ├── nginx.bootstrap.conf.template   # First-boot HTTP ACME validation config (ssl mode)
 │       └── nginx.ssl.conf.template         # Direct HTTPS config (if Docker owns 80/443)
 ├── scripts/
@@ -53,7 +58,7 @@ docker compose -f deploy/vps/docker-compose.prod.yml --env-file deploy/vps/.env.
 Port `7008` is bound strictly to `127.0.0.1` so direct external plain-HTTP hits are blocked by design.
 
 ### Step 3: Host Nginx HTTPS Proxy (`80/443` -> `127.0.0.1:7008`)
-Use [host-reverse-proxy.conf.example](nginx/host-reverse-proxy.conf.example) for your real domains and run `certbot --nginx` on the host so both your CRM domain and Console domain terminate TLS over HTTPS cleanly.
+Use [host-reverse-proxy.conf.example](nginx/host-reverse-proxy.conf.example) for your domain and run `certbot --nginx --hsts --redirect` on the host so CRM (`/`), API (`/api/`), and Operator Console (`/console/`) all serve cleanly over HTTPS on one domain.
 
 ### Step 4: Enable Daily Backups
 ```bash

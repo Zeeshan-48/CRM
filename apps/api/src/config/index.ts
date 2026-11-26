@@ -23,8 +23,16 @@ const config = {
     `${process.env.CRM_APP_URL || "http://localhost:3570"},${process.env.OPERATOR_APP_URL || "http://localhost:3580"}`
   )
     .split(",")
-    .map((o) => o.trim().replace(/\/$/, ""))
-    .filter((o) => o && o !== "*"),
+    .map((o) => {
+      const cleaned = o.trim().replace(/\/$/, "");
+      if (!cleaned || cleaned === "*") return "";
+      try {
+        return new URL(cleaned).origin;
+      } catch {
+        return cleaned;
+      }
+    })
+    .filter(Boolean),
   // Number of reverse proxies in front of the API (ALB = 1, CloudFront + ALB =
   // 2). Decides which X-Forwarded-For entry is the client IP for rate limits.
   TRUST_PROXY: Number(process.env.TRUST_PROXY || "1"),

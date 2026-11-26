@@ -2,12 +2,21 @@
 set -eu
 
 : "${CRM_DOMAIN:?CRM_DOMAIN environment variable is required}"
-: "${CONSOLE_DOMAIN:?CONSOLE_DOMAIN environment variable is required}"
-
+CONSOLE_DOMAIN="${CONSOLE_DOMAIN:-$CRM_DOMAIN}"
 EDGE_MODE="${EDGE_MODE:-proxy}"
 
+mkdir -p /etc/nginx/conf.d
+rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/console-subdomain.conf
+
 if [ "$EDGE_MODE" = "proxy" ]; then
-  echo "[edge-nginx] Starting in host-proxy mode for ${CRM_DOMAIN} and ${CONSOLE_DOMAIN}."
+  if [ "$CONSOLE_DOMAIN" = "$CRM_DOMAIN" ]; then
+    echo "[edge-nginx] Single-domain host-proxy mode: CRM=${CRM_DOMAIN}/, Console=${CRM_DOMAIN}/console/"
+  else
+    echo "[edge-nginx] Dual-domain host-proxy mode: CRM=${CRM_DOMAIN}, Console=${CONSOLE_DOMAIN}"
+    envsubst '${CRM_DOMAIN} ${CONSOLE_DOMAIN}' \
+      < /etc/nginx/templates/console.subdomain.proxy.conf.template \
+      > /etc/nginx/conf.d/console-subdomain.conf
+  fi
   TEMPLATE="/etc/nginx/templates/nginx.proxy.conf.template"
 else
   CERT_CRM_FULL="/etc/letsencrypt/live/${CRM_DOMAIN}/fullchain.pem"

@@ -25,7 +25,9 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --offline --frozen-lockfile --filter @open-crm/console...
 ARG VITE_API_BASE_URL=http://localhost:5066/api/v1/operator
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ARG VITE_BASE_PATH=/
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    VITE_BASE_PATH=${VITE_BASE_PATH}
 RUN pnpm --filter @open-crm/console build
 
 # Just the built files: docker buildx build --target dist --output type=local,dest=<dir>

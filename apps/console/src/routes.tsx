@@ -14,30 +14,36 @@ const page = (load: () => Promise<PageModule>): Pick<RouteObject, "lazy"> => ({
   lazy: () => load().then((m) => ({ Component: m.default })),
 });
 
-export const router = createBrowserRouter([
-  {
-    errorElement: <RouteError />,
-    // Pages load lazily; render nothing while the first one arrives.
-    hydrateFallbackElement: null,
-    children: [
-      { path: "/login", element: <LoginPage /> },
-      // Public: the operator password-reset link lands here to set a new password.
-      { path: "/reset-password", ...page(() => import("@/pages/reset-password")) },
-      {
-        element: <AppShell />,
-        children: [
-          { path: "/", ...page(() => import("@/pages/dashboard")) },
-          { path: "/tenants", ...page(() => import("@/pages/tenants")) },
-          { path: "/tenants/:id", ...page(() => import("@/pages/tenant-detail")) },
-          { path: "/vault", ...page(() => import("@/pages/tenant-vault")) },
-          { path: "/plans", ...page(() => import("@/pages/plans")) },
-          { path: "/billing", ...page(() => import("@/pages/billing")) },
-          { path: "/operators", ...page(() => import("@/pages/operators")) },
-          { path: "/audit", ...page(() => import("@/pages/audit")) },
-          { path: "/profile", ...page(() => import("@/pages/profile")) },
-          { path: "*", ...page(() => import("@/pages/not-found")) },
-        ],
-      },
-    ],
-  },
-]);
+const rawBase = (import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
+const basename = rawBase || "/";
+
+export const router = createBrowserRouter(
+  [
+    {
+      errorElement: <RouteError />,
+      // Pages load lazily; render nothing while the first one arrives.
+      hydrateFallbackElement: null,
+      children: [
+        { path: "/login", element: <LoginPage /> },
+        // Public: the operator password-reset link lands here to set a new password.
+        { path: "/reset-password", ...page(() => import("@/pages/reset-password")) },
+        {
+          element: <AppShell />,
+          children: [
+            { path: "/", ...page(() => import("@/pages/dashboard")) },
+            { path: "/tenants", ...page(() => import("@/pages/tenants")) },
+            { path: "/tenants/:id", ...page(() => import("@/pages/tenant-detail")) },
+            { path: "/vault", ...page(() => import("@/pages/tenant-vault")) },
+            { path: "/plans", ...page(() => import("@/pages/plans")) },
+            { path: "/billing", ...page(() => import("@/pages/billing")) },
+            { path: "/operators", ...page(() => import("@/pages/operators")) },
+            { path: "/audit", ...page(() => import("@/pages/audit")) },
+            { path: "/profile", ...page(() => import("@/pages/profile")) },
+            { path: "*", ...page(() => import("@/pages/not-found")) },
+          ],
+        },
+      ],
+    },
+  ],
+  { basename }
+);
