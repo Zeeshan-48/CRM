@@ -4,8 +4,10 @@ import { db } from "../db/connection";
 import plivoWebhookService from "../services/plivo-webhook.service";
 import logger from "../utils/logger";
 
+const E164_REGEX = /^\+[1-9]\d{6,14}$/;
+const SAFE_DIAL_REGEX = /^\+?[1-9]\d{6,14}$/;
+
 export const handlePlivoAnswer = async (req: Request, res: Response) => {
-  const token = String(req.params.token || req.query.token || "platform_default_webhook_token");
   let callId = String(
     req.query.callId ||
       req.body?.callId ||
@@ -14,7 +16,16 @@ export const handlePlivoAnswer = async (req: Request, res: Response) => {
       req.headers?.["x-ph-callid"] ||
       req.headers?.["sip-h-x-ph-callid"] ||
       ""
-  );
+  ).trim();
+
+  const auth = await plivoWebhookService.authenticateWebhook(req, callId);
+  if (!auth.ok) {
+    res.status(auth.statusCode).send(auth.message ?? "Unauthorized");
+    return;
+  }
+
+  const cfg = auth.cfg;
+  const token = auth.resolvedToken;
 
   // When dialed from WebRTC softphone or bridge, destination phone is in To or query leadPhone
   let leadPhone = String(
@@ -42,46 +53,53 @@ export const handlePlivoAnswer = async (req: Request, res: Response) => {
 
   // Fallback 1: If callId was provided, look up to_number from voice_calls if leadPhone was missing
   if (!leadPhone && callId) {
-    const callRow = await db
+    let q = db
       .selectFrom("voice_calls")
       .select(["to_number"])
-      .where("id", "=", callId)
-      .executeTakeFirst();
+      .where("id", "=", callId);
+    if (cfg?.tenant_id) q = q.where("tenant_id", "=", cfg.tenant_id);
+    const callRow = await q.executeTakeFirst();
     if (callRow?.to_number) {
       leadPhone = callRow.to_number;
     }
   }
 
   // Fallback 2: match most recent queued call for this destination number if callId was not directly supplied
-  if (!callId && leadPhone) {
-    const recentCall = await db
+  if (!callId && leadPhone && SAFE_DIAL_REGEX.test(leadPhone)) {
+    let q = db
       .selectFrom("voice_calls")
       .select(["id", "tenant_id"])
       .where("to_number", "=", leadPhone)
       .where("call_status", "=", "queued")
       .where("created_at", ">", new Date(Date.now() - 5 * 60 * 1000))
       .orderBy("created_at", "desc")
-      .limit(1)
-      .executeTakeFirst();
+      .limit(1);
+    if (cfg?.tenant_id) q = q.where("tenant_id", "=", cfg.tenant_id);
+    const recentCall = await q.executeTakeFirst();
     if (recentCall) {
       callId = recentCall.id;
     }
   }
 
-  const callUuid = String(req.body?.CallUUID ?? req.query?.CallUUID ?? "");
+  const callUuid = String(req.body?.CallUUID ?? req.query?.CallUUID ?? "").trim();
   if (callId && callUuid) {
-    await db
+    let uq = db
       .updateTable("voice_calls")
       .set({
         external_call_id: callUuid,
         call_status: "in-progress",
         updated_at: new Date(),
       })
-      .where("id", "=", callId)
-      .execute();
+      .where("id", "=", callId);
+    if (cfg?.tenant_id) uq = uq.where("tenant_id", "=", cfg.tenant_id);
+    await uq.execute();
   }
 
-  const cfg = await plivoWebhookService.configForToken(token, callId);
+  if (!SAFE_DIAL_REGEX.test(leadPhone)) {
+    res.setHeader("Content-Type", "application/xml");
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?>\n<Response />');
+    return;
+  }
 
   // Caller ID shown to recipient MUST be a valid purchased/verified E.164 phone number,
   // NEVER a SIP endpoint username (like agent123) which telecom carriers reject!
@@ -96,8 +114,6 @@ export const handlePlivoAnswer = async (req: Request, res: Response) => {
       ""
   ).trim();
 
-  // Strict E.164 check for callerId. If req.body.From is a SIP URI/username, discard it!
-  const E164_REGEX = /^\+[1-9]\d{6,14}$/;
   if (!E164_REGEX.test(callerId)) {
     callerId = config.PLIVO_DEFAULT_FROM_NUMBER || "";
   }
@@ -129,41 +145,49 @@ export const handlePlivoAnswer = async (req: Request, res: Response) => {
 };
 
 export const handlePlivoHangup = async (req: Request, res: Response) => {
-  const token = String(req.params.token || req.query.token || "platform_default_webhook_token");
   const callId = String(
     req.query.callId ||
       req.body?.callId ||
       req.body?.["X-PH-callId"] ||
       req.body?.["SIP-H-X-PH-callId"] ||
       ""
-  );
-  const cfg = await plivoWebhookService.configForToken(token, callId);
+  ).trim();
+
+  const auth = await plivoWebhookService.authenticateWebhook(req, callId);
+  if (!auth.ok) {
+    res.status(auth.statusCode).send(auth.message ?? "Unauthorized");
+    return;
+  }
 
   res.status(200).send("OK");
 
   const payload = { ...req.query, ...req.body };
 
   void plivoWebhookService
-    .handleHangup(cfg, payload, callId)
+    .handleHangup(auth.cfg, payload, callId)
     .catch((err) => logger.warn(`plivo hangup error: ${String(err)}`));
 };
 
 export const handlePlivoRecording = async (req: Request, res: Response) => {
-  const token = String(req.params.token || req.query.token || "platform_default_webhook_token");
   const callId = String(
     req.query.callId ||
       req.body?.callId ||
       req.body?.["X-PH-callId"] ||
       req.body?.["SIP-H-X-PH-callId"] ||
       ""
-  );
-  const cfg = await plivoWebhookService.configForToken(token, callId);
+  ).trim();
+
+  const auth = await plivoWebhookService.authenticateWebhook(req, callId);
+  if (!auth.ok) {
+    res.status(auth.statusCode).send(auth.message ?? "Unauthorized");
+    return;
+  }
 
   res.status(200).send("OK");
 
   const payload = { ...req.query, ...req.body };
 
   void plivoWebhookService
-    .handleRecording(cfg, payload, callId)
+    .handleRecording(auth.cfg, payload, callId)
     .catch((err) => logger.warn(`plivo recording error: ${String(err)}`));
 };

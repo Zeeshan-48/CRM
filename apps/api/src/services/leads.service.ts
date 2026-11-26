@@ -333,8 +333,10 @@ class LeadsService {
     };
   }
 
-  async getImportProgress(jobId: string) {
-    return getLeadImportProgress(jobId);
+  async getImportProgress(tenantId: string, jobId: string) {
+    const progress = await getLeadImportProgress(jobId);
+    if (!progress || progress.tenantId !== tenantId) return null;
+    return progress;
   }
 
   private async runImportAutomation(
@@ -742,7 +744,16 @@ class LeadsService {
     } else {
       rows = (await leadsRepository.list(tenantId, { limit: 500 })).leads;
     }
-    const clean = (s: unknown) => String(s ?? "").replace(/[",\n]/g, " ");
+    // Neutralize CSV formula injection (=, @, tab, cr, or non-phone expressions starting with +/-)
+    const clean = (s: unknown) => {
+      const stripped = String(s ?? "").replace(/[",\r\n]/g, " ");
+      const trimmed = stripped.trimStart();
+      if (/^[=@\t]/.test(trimmed)) return `'${stripped}`;
+      if (/^[+-]/.test(trimmed) && !/^[+-]\d+(\.\d+)?$/.test(trimmed.replace(/\s+/g, ""))) {
+        return `'${stripped}`;
+      }
+      return stripped;
+    };
     const lines = [["name", "email", "phone", "city", "source", "status", "score"].join(",")];
     for (const l of rows) {
       lines.push(

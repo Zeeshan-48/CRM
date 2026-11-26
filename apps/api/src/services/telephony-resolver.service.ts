@@ -1,6 +1,7 @@
 import config from "../config";
 import telephonyRepository from "../repositories/telephony.repository";
 import { decryptSecret } from "../utils/crypto";
+import { getPlatformPlivoWebhookToken } from "../utils/plivo-signature";
 import type { ExotelCreds } from "./exotel.client";
 import type { PlivoCreds } from "./plivo.client";
 import type { TwilioCreds } from "./twilio.client";
@@ -137,7 +138,7 @@ class TelephonyResolverService {
           authToken: config.PLIVO_AUTH_TOKEN,
         },
         mainPhone: config.PLIVO_DEFAULT_FROM_NUMBER || "",
-        webhookToken: "platform_default_webhook_token",
+        webhookToken: getPlatformPlivoWebhookToken() || "platform_default_webhook_token",
       };
     }
 

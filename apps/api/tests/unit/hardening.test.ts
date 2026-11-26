@@ -24,8 +24,14 @@ describe("production config guard", () => {
     );
   });
 
-  it("refuses short secrets and an empty origin list", () => {
+  it("refuses template placeholders, short secrets, and an empty origin list", () => {
     const strong = { ...prod, JWT_SECRET: random(40), CREDENTIALS_ENCRYPTION_KEY: random(40) };
+    expect(() =>
+      assertProductionConfig({ ...strong, JWT_SECRET: "replace-with-64-character-random-hex-string" })
+    ).toThrow(/JWT_SECRET/);
+    expect(() =>
+      assertProductionConfig({ ...strong, CREDENTIALS_ENCRYPTION_KEY: "your-secret-key-placeholder-value-12345" })
+    ).toThrow(/CREDENTIALS_ENCRYPTION_KEY/);
     expect(() => assertProductionConfig({ ...strong, JWT_SECRET: "short" })).toThrow(/JWT_SECRET/);
     expect(() => assertProductionConfig({ ...strong, CORS_ORIGINS: [] })).toThrow(/CORS_ORIGINS/);
     expect(() => assertProductionConfig(strong)).not.toThrow();

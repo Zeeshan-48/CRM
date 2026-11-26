@@ -11,6 +11,7 @@ export interface TenantTokenPayload {
 
 export const signTenantToken = (payload: TenantTokenPayload): string => {
   return jwt.sign(payload, config.JWT_SECRET, {
+    algorithm: "HS256",
     expiresIn: config.JWT_EXPIRY as jwt.SignOptions["expiresIn"],
   });
 };
@@ -18,7 +19,7 @@ export const signTenantToken = (payload: TenantTokenPayload): string => {
 export const verifyTenantToken = (token: string): TenantTokenPayload => {
   let decoded: unknown;
   try {
-    decoded = jwt.verify(token, config.JWT_SECRET);
+    decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ["HS256"] });
   } catch {
     throw new UnauthorizedError("Invalid or expired token");
   }
@@ -45,7 +46,7 @@ export const signPasswordResetToken = (
   payload: PasswordResetPayload,
   passwordHash: string
 ): string => {
-  return jwt.sign(payload, resetSecret(passwordHash), { expiresIn: "1h" });
+  return jwt.sign(payload, resetSecret(passwordHash), { algorithm: "HS256", expiresIn: "1h" });
 };
 
 // Read the (unverified) payload so the caller can look up the user and its
@@ -64,7 +65,7 @@ export const decodePasswordResetToken = (
 export const verifyPasswordResetToken = (token: string, passwordHash: string): PasswordResetPayload => {
   let decoded: unknown;
   try {
-    decoded = jwt.verify(token, resetSecret(passwordHash));
+    decoded = jwt.verify(token, resetSecret(passwordHash), { algorithms: ["HS256"] });
   } catch {
     throw new UnauthorizedError("Invalid or expired reset link");
   }
@@ -86,7 +87,7 @@ export const signOperatorPasswordResetToken = (
   payload: OperatorPasswordResetPayload,
   passwordHash: string
 ): string => {
-  return jwt.sign(payload, resetSecret(passwordHash), { expiresIn: "1h" });
+  return jwt.sign(payload, resetSecret(passwordHash), { algorithm: "HS256", expiresIn: "1h" });
 };
 
 export const decodeOperatorPasswordResetToken = (
@@ -104,7 +105,7 @@ export const verifyOperatorPasswordResetToken = (
 ): OperatorPasswordResetPayload => {
   let decoded: unknown;
   try {
-    decoded = jwt.verify(token, resetSecret(passwordHash));
+    decoded = jwt.verify(token, resetSecret(passwordHash), { algorithms: ["HS256"] });
   } catch {
     throw new UnauthorizedError("Invalid or expired reset link");
   }
@@ -127,6 +128,7 @@ export interface OperatorTokenPayload {
 
 export const signOperatorToken = (payload: OperatorTokenPayload): string => {
   return jwt.sign(payload, config.JWT_SECRET, {
+    algorithm: "HS256",
     expiresIn: config.JWT_EXPIRY as jwt.SignOptions["expiresIn"],
   });
 };
@@ -134,7 +136,7 @@ export const signOperatorToken = (payload: OperatorTokenPayload): string => {
 export const verifyOperatorToken = (token: string): OperatorTokenPayload => {
   let decoded: unknown;
   try {
-    decoded = jwt.verify(token, config.JWT_SECRET);
+    decoded = jwt.verify(token, config.JWT_SECRET, { algorithms: ["HS256"] });
   } catch {
     throw new UnauthorizedError("Invalid or expired token");
   }

@@ -235,11 +235,17 @@ const config = {
  */
 export function assertProductionConfig(c: typeof config = config): void {
   if (!c.isProduction) return;
+  const isPlaceholder = (v: string) =>
+    /^(replace-with|change-me|your-|example)/i.test(v.trim());
   const problems: string[] = [];
-  if (c.JWT_SECRET === DEV_JWT_SECRET || c.JWT_SECRET.length < 32) {
+  if (c.JWT_SECRET === DEV_JWT_SECRET || isPlaceholder(c.JWT_SECRET) || c.JWT_SECRET.length < 32) {
     problems.push("JWT_SECRET must be set to a random value of at least 32 characters");
   }
-  if (c.CREDENTIALS_ENCRYPTION_KEY === DEV_ENCRYPTION_KEY || c.CREDENTIALS_ENCRYPTION_KEY.length < 32) {
+  if (
+    c.CREDENTIALS_ENCRYPTION_KEY === DEV_ENCRYPTION_KEY ||
+    isPlaceholder(c.CREDENTIALS_ENCRYPTION_KEY) ||
+    c.CREDENTIALS_ENCRYPTION_KEY.length < 32
+  ) {
     problems.push("CREDENTIALS_ENCRYPTION_KEY must be set to a random value of at least 32 characters");
   }
   if (c.CORS_ORIGINS.length === 0) problems.push("CORS_ORIGINS must list the app origins");

@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import config from "../config";
 import logger from "../utils/logger";
+import { getPlatformPlivoWebhookToken } from "../utils/plivo-signature";
 
 export interface PlivoCreds {
   authId: string;
@@ -171,15 +172,16 @@ class PlivoClientService {
   async downloadRecording(creds: PlivoCreds, recordingUrl: string): Promise<Buffer | null> {
     if (simulated() || !this.keyed(creds)) return null;
 
-    let host: string;
+    let parsed: URL;
     try {
-      host = new URL(recordingUrl).hostname;
+      parsed = new URL(recordingUrl);
     } catch {
       return null;
     }
 
-    if (!host.endsWith(".plivo.com")) {
-      logger.warn(`plivo recording url rejected (host ${host})`);
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== "https:" || (host !== "plivo.com" && !host.endsWith(".plivo.com"))) {
+      logger.warn(`plivo recording url rejected (protocol=${parsed.protocol}, host=${host})`);
       return null;
     }
 
@@ -287,7 +289,8 @@ class PlivoClientService {
       return { ok: false, error: "Missing Plivo Application ID or Public URL" };
     }
 
-    const tokenPart = params.webhookToken ? `/${encodeURIComponent(params.webhookToken)}` : "";
+    const effectiveToken = params.webhookToken || getPlatformPlivoWebhookToken(creds.authId);
+    const tokenPart = effectiveToken ? `/${encodeURIComponent(effectiveToken)}` : "";
     const answerUrl = `${params.publicUrl}/api/v1/telephony/webhooks/plivo${tokenPart}/answer`;
     const hangupUrl = `${params.publicUrl}/api/v1/telephony/webhooks/plivo${tokenPart}/hangup`;
 

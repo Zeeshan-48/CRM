@@ -124,7 +124,8 @@ export const bulkImport = async (req: Request, res: Response) => {
 };
 
 export const getImportJobStatus = async (req: Request, res: Response) => {
-  const status = await leadsService.getImportProgress(String(req.params.jobId));
+  const { tenantId } = ctx(req);
+  const status = await leadsService.getImportProgress(tenantId, String(req.params.jobId));
   if (!status) throw new NotFoundError("Import job not found");
   sendSuccessResponse({
     res,

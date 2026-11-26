@@ -1,7 +1,16 @@
+import type { Request } from "express";
 import config from "../config";
 import { db } from "../db/connection";
 import { enqueueRecordingDownload } from "../queue/recordings.queue";
+import { decryptSecret } from "../utils/crypto";
+import {
+  escapeXml,
+  getPlatformPlivoWebhookToken,
+  safeEqualString,
+  verifyPlivoV2Signature,
+} from "../utils/plivo-signature";
 import logger from "../utils/logger";
+import { getRequestBaseUrl } from "./storage.service";
 import telephonyService from "./telephony.service";
 
 interface PlivoConfigRow {
@@ -9,17 +18,149 @@ interface PlivoConfigRow {
   tenant_id: string;
   provider: string;
   account_sid: string | null;
+  auth_token_encrypted?: string | null;
   from_number: string | null;
   webhook_token: string | null;
   status: string;
 }
 
+export interface PlivoWebhookAuthResult {
+  ok: boolean;
+  statusCode: number;
+  message?: string;
+  cfg: PlivoConfigRow | null;
+  resolvedToken: string;
+}
+
 class PlivoWebhookService {
+  async authenticateWebhook(req: Request, callId?: string): Promise<PlivoWebhookAuthResult> {
+    const rawToken = String(req.params.token || req.query.token || "").trim();
+    const isPlaceholder = rawToken === "platform_default_webhook_token";
+    const explicitToken = rawToken && !isPlaceholder ? rawToken : "";
+    const platformToken = getPlatformPlivoWebhookToken();
+
+    let cfg: PlivoConfigRow | null = null;
+    let tokenAuthenticated = false;
+    const candidateAuthTokens: string[] = [];
+
+    if (explicitToken) {
+      const row = await db
+        .selectFrom("tenant_telephony")
+        .select([
+          "id",
+          "tenant_id",
+          "provider",
+          "account_sid",
+          "auth_token_encrypted",
+          "from_number",
+          "webhook_token",
+          "status",
+        ])
+        .where("webhook_token", "=", explicitToken)
+        .where("provider", "=", "PLIVO")
+        .executeTakeFirst();
+
+      if (row) {
+        cfg = row;
+        tokenAuthenticated = true;
+        if (row.auth_token_encrypted) {
+          try {
+            const decrypted = decryptSecret(row.auth_token_encrypted);
+            if (decrypted) candidateAuthTokens.push(decrypted);
+          } catch {
+            // corrupted ciphertext ignored
+          }
+        }
+      } else if (platformToken && safeEqualString(explicitToken, platformToken)) {
+        tokenAuthenticated = true;
+      } else {
+        return {
+          ok: false,
+          statusCode: 404,
+          message: "Not found",
+          cfg: null,
+          resolvedToken: "",
+        };
+      }
+    }
+
+    if (config.PLIVO_AUTH_TOKEN) {
+      candidateAuthTokens.push(config.PLIVO_AUTH_TOKEN);
+    }
+
+    if (!cfg) {
+      cfg = await this.configForToken(explicitToken || rawToken, callId);
+    }
+
+    const sigV2 = String(
+      req.header("x-plivo-signature-v2") || req.header("x-plivo-signature-ma-v2") || ""
+    ).trim();
+    const nonceV2 = String(req.header("x-plivo-signature-v2-nonce") || "").trim();
+    const sigPresent = Boolean(sigV2 || nonceV2);
+
+    let signatureVerified = false;
+    if (sigPresent) {
+      const baseUrls = [getRequestBaseUrl(req) || "", config.APP_PUBLIC_URL || ""].filter(Boolean);
+      const pathName = req.originalUrl.split("?")[0] || `${req.baseUrl}${req.path}`;
+      signatureVerified = verifyPlivoV2Signature({
+        baseUrls,
+        pathName,
+        nonce: nonceV2,
+        signatureHeader: sigV2,
+        authTokens: candidateAuthTokens,
+      });
+
+      if (!signatureVerified) {
+        return {
+          ok: false,
+          statusCode: 401,
+          message: "Invalid Plivo signature",
+          cfg: null,
+          resolvedToken: "",
+        };
+      }
+    }
+
+    if (config.isProduction && !tokenAuthenticated && !signatureVerified) {
+      return {
+        ok: false,
+        statusCode: 401,
+        message: "Webhook authentication required",
+        cfg: null,
+        resolvedToken: "",
+      };
+    }
+
+    const resolvedToken =
+      explicitToken ||
+      (cfg?.webhook_token && cfg.webhook_token !== "platform_default_webhook_token"
+        ? cfg.webhook_token
+        : "") ||
+      platformToken ||
+      "platform_default_webhook_token";
+
+    return {
+      ok: true,
+      statusCode: 200,
+      cfg,
+      resolvedToken,
+    };
+  }
+
   async configForToken(token?: string, callId?: string): Promise<PlivoConfigRow | null> {
     if (token && token !== "platform_default_webhook_token") {
       const row = await db
         .selectFrom("tenant_telephony")
-        .select(["id", "tenant_id", "provider", "account_sid", "from_number", "webhook_token", "status"])
+        .select([
+          "id",
+          "tenant_id",
+          "provider",
+          "account_sid",
+          "auth_token_encrypted",
+          "from_number",
+          "webhook_token",
+          "status",
+        ])
         .where("webhook_token", "=", token)
         .where("provider", "=", "PLIVO")
         .executeTakeFirst();
@@ -40,7 +181,7 @@ class PlivoWebhookService {
           provider: "PLIVO",
           account_sid: config.PLIVO_AUTH_ID || null,
           from_number: call.from_number ?? config.PLIVO_DEFAULT_FROM_NUMBER ?? null,
-          webhook_token: token || "platform_default_webhook_token",
+          webhook_token: token || getPlatformPlivoWebhookToken() || "platform_default_webhook_token",
           status: "ACTIVE",
         };
       }
@@ -53,7 +194,7 @@ class PlivoWebhookService {
         provider: "PLIVO",
         account_sid: config.PLIVO_AUTH_ID,
         from_number: config.PLIVO_DEFAULT_FROM_NUMBER || null,
-        webhook_token: token || "platform_default_webhook_token",
+        webhook_token: token || getPlatformPlivoWebhookToken() || "platform_default_webhook_token",
         status: "ACTIVE",
       };
     }
@@ -70,7 +211,10 @@ class PlivoWebhookService {
     hangupUrl: string;
     recordingUrl: string;
   }): string {
-    const { callerId, leadPhone, hangupUrl, recordingUrl } = params;
+    const callerId = escapeXml(params.callerId);
+    const leadPhone = escapeXml(params.leadPhone);
+    const hangupUrl = escapeXml(params.hangupUrl);
+    const recordingUrl = escapeXml(params.recordingUrl);
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Record action="${recordingUrl}" callbackUrl="${recordingUrl}" callbackMethod="POST" startOnDialAnswer="true" redirect="false" fileFormat="mp3" maxLength="7200" />
@@ -137,7 +281,7 @@ class PlivoWebhookService {
         await query.where("id", "=", matchedId).execute();
       }
     } else if (callUuid) {
-      const match = await db
+      let matchQuery = db
         .selectFrom("voice_calls")
         .select(["id", "tenant_id"])
         .where((eb) =>
@@ -145,12 +289,15 @@ class PlivoWebhookService {
             eb("external_call_id", "=", callUuid),
             eb("twilio_call_sid", "=", callUuid),
           ])
-        )
-        .executeTakeFirst();
+        );
+      if (tenantId) {
+        matchQuery = matchQuery.where("tenant_id", "=", tenantId);
+      }
+      const match = await matchQuery.executeTakeFirst();
       if (match) {
         matchedId = match.id;
         tenantId = tenantId || match.tenant_id;
-        await query.where("id", "=", match.id).execute();
+        await query.where("id", "=", match.id).where("tenant_id", "=", tenantId).execute();
       } else if (tenantId) {
         await query
           .where("external_call_id", "=", callUuid)
@@ -183,7 +330,7 @@ class PlivoWebhookService {
     let tenantId = cfg?.tenant_id || "";
 
     if (!matchedId && callUuid) {
-      const match = await db
+      let matchQuery = db
         .selectFrom("voice_calls")
         .select(["id", "tenant_id"])
         .where((eb) =>
@@ -191,8 +338,11 @@ class PlivoWebhookService {
             eb("external_call_id", "=", callUuid),
             eb("twilio_call_sid", "=", callUuid),
           ])
-        )
-        .executeTakeFirst();
+        );
+      if (tenantId) {
+        matchQuery = matchQuery.where("tenant_id", "=", tenantId);
+      }
+      const match = await matchQuery.executeTakeFirst();
       if (match) {
         matchedId = match.id;
         tenantId = tenantId || match.tenant_id;
@@ -211,14 +361,15 @@ class PlivoWebhookService {
     }
 
     if (matchedId) {
-      await db
+      let uq = db
         .updateTable("voice_calls")
         .set({
           recording_url: String(recordingUrl),
           updated_at: new Date(),
         })
-        .where("id", "=", matchedId)
-        .execute();
+        .where("id", "=", matchedId);
+      if (tenantId) uq = uq.where("tenant_id", "=", tenantId);
+      await uq.execute();
 
       if (tenantId) {
         void enqueueRecordingDownload({
@@ -229,14 +380,15 @@ class PlivoWebhookService {
         });
       }
     } else if (callUuid) {
-      await db
+      let uq = db
         .updateTable("voice_calls")
         .set({
           recording_url: String(recordingUrl),
           updated_at: new Date(),
         })
-        .where("external_call_id", "=", callUuid)
-        .execute();
+        .where("external_call_id", "=", callUuid);
+      if (tenantId) uq = uq.where("tenant_id", "=", tenantId);
+      await uq.execute();
 
       if (tenantId) {
         void enqueueRecordingDownload({

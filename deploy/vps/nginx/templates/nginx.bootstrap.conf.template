@@ -1,0 +1,30 @@
+# HTTP-only bootstrap config used automatically on first deploy before Certbot issues TLS certs.
+# Refuses application login/API traffic over plaintext HTTP; serves only ACME challenge + health check.
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    server_tokens off;
+    default_type text/plain;
+
+    server {
+        listen 80;
+        server_name ${CRM_DOMAIN} ${CONSOLE_DOMAIN} _;
+
+        location = /nginx-health {
+            allow 127.0.0.1;
+            deny all;
+            return 200 "ok\n";
+        }
+
+        location /.well-known/acme-challenge/ {
+            root /var/www/certbot;
+        }
+
+        location / {
+            return 503 "TLS certificate provisioning pending. Run deploy/vps/scripts/init-ssl.sh.\n";
+        }
+    }
+}

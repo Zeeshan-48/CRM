@@ -2,10 +2,12 @@
 # Bn Orbit - VPS Production Docker Compose
 # ==============================================================================
 # Self-contained production stack for a single VPS (Ubuntu 22.04 / 24.04 LTS).
-# Runs Postgres, Redis, REST API, Web App, Operator Console, and Edge Nginx.
+# Runs Postgres, Redis (password-protected), REST API (read-only rootfs),
+# Web App, Operator Console, and Edge Nginx (auto HTTP bootstrap -> TLS HTTPS).
 #
-# Usage:
-#   docker compose -f deploy/vps/docker-compose.prod.yml --env-file deploy/vps/.env.prod up -d --build
+# First deploy & SSL issuance:
+#   chmod +x deploy/vps/scripts/*.sh
+#   ./deploy/vps/scripts/init-ssl.sh
 # ==============================================================================
 
 name: bn-orbit-prod
@@ -16,6 +18,8 @@ services:
     image: postgres:16.12-alpine
     container_name: bn-orbit-postgres
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command: ["postgres", "-c", "max_connections=200"]
     environment:
       POSTGRES_DB: ${PG_DATABASE:-crm}
@@ -31,12 +35,16 @@ services:
     networks:
       - internal-net
 
-  # ---- 2. Cache & Message Queue (Redis 7) ----
+  # ---- 2. Cache & Message Queue (Redis 7, authenticated) ----
   redis:
     image: redis:7.4-alpine
     container_name: bn-orbit-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env.prod}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env.prod}"]
     volumes:
       - redisdata:/data
     healthcheck:
@@ -54,6 +62,8 @@ services:
       dockerfile: infra/docker/api.Dockerfile
     image: bn-orbit-api:prod
     container_name: bn-orbit-migrate
+    security_opt:
+      - no-new-privileges:true
     command: ["node", "db/migrate.js"]
     env_file:
       - .env.prod
@@ -75,6 +85,11 @@ services:
       dockerfile: infra/docker/api.Dockerfile
     image: bn-orbit-api:prod
     container_name: bn-orbit-api
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:uid=1000,gid=1000
     command: ["node", "--enable-source-maps", "dist/index.js"]
     restart: unless-stopped
     env_file:
@@ -84,7 +99,7 @@ services:
       PORT: "5066"
       PG_DATABASE_HOST: postgres
       PG_DATABASE_PORT: "5432"
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379/0}
       TRUST_PROXY: "1"
       LOCAL_STORAGE_DIR: /app/.local-storage
     volumes:
@@ -106,10 +121,12 @@ services:
         VITE_API_BASE_URL: /api/v1
     image: bn-orbit-web:prod
     container_name: bn-orbit-web
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal-net
 
@@ -122,29 +139,46 @@ services:
         VITE_API_BASE_URL: /api/v1/operator
     image: bn-orbit-console:prod
     container_name: bn-orbit-console
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal-net
 
-  # ---- 7. Edge Nginx Reverse Proxy (SSL & Domain Routing) ----
+  # ---- 7. Edge Nginx Reverse Proxy (ACME Bootstrap -> TLS & Domain Routing) ----
   edge-nginx:
     image: nginx:1.27-alpine
     container_name: bn-orbit-edge-nginx
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      CRM_DOMAIN: ${CRM_DOMAIN:?Set CRM_DOMAIN in .env.prod}
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?Set CONSOLE_DOMAIN in .env.prod}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/render-and-run.sh:/etc/nginx/entrypoint/render-and-run.sh:ro
+      - ./nginx/templates:/etc/nginx/templates:ro
       - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
+    command: ["/bin/sh", "/etc/nginx/entrypoint/render-and-run.sh"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
     depends_on:
-      - web
-      - console
-      - api
+      web:
+        condition: service_healthy
+      console:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     networks:
       - internal-net
 
@@ -158,4 +192,3 @@ volumes:
 networks:
   internal-net:
     driver: bridge
-

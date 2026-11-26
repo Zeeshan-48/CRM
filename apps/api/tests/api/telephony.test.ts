@@ -306,4 +306,26 @@ describe("call state sync & stale call reconciliation", () => {
 
     expect(byId.get(freshQueuedId)?.call_status).toBe("queued");
   });
+
+  it("enforces Plivo webhook security (unknown token 404, forged sig 401, safe XML on valid request)", async () => {
+    const forgedSig = await api
+      .post("/api/v1/telephony/webhooks/plivo/answer")
+      .set("X-Plivo-Signature-V2", "forged_signature==")
+      .set("X-Plivo-Signature-V2-Nonce", "12345")
+      .send({ To: "+917903719233" });
+    expect(forgedSig.status).toBe(401);
+
+    const badToken = await api
+      .post("/api/v1/telephony/webhooks/plivo/totally-bogus-token-value/answer")
+      .send({ To: "+917903719233" });
+    expect(badToken.status).toBe(404);
+
+    // Invalid leadPhone / XML injection attempt returns clean empty <Response /> rather than injecting tags
+    const injected = await api
+      .post("/api/v1/telephony/webhooks/plivo/answer")
+      .send({ To: "evil</Number><Speak>hacked</Speak>" });
+    expect(injected.status).toBe(200);
+    expect(injected.text).not.toContain("<Speak>hacked");
+    expect(injected.text).toContain("<Response");
+  });
 });
