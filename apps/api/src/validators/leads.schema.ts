@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LEAD_IMPORT_MODES, LEAD_IMPORT_TYPES } from "../constants/lead-import.const";
 import { optBool, optNumeric, optRecord, optStr, optStrArray } from "./common";
 
 // DB-backed enums (safe to enforce: valid callers only ever send these values;
@@ -36,6 +37,8 @@ export const createLeadSchema = z.object({
   socials: optRecord,
   budget: optBool,
   owner_id: optStr,
+  import_type: z.enum(LEAD_IMPORT_TYPES).nullish(),
+  extra_fields: optRecord,
 });
 
 export const updateLeadSchema = z.object({
@@ -52,6 +55,8 @@ export const updateLeadSchema = z.object({
   socials: optRecord,
   budget: optBool,
   owner_id: optStr,
+  import_type: z.enum(LEAD_IMPORT_TYPES).nullish(),
+  extra_fields: optRecord,
 });
 
 export const bulkActionSchema = z.object({
@@ -61,10 +66,17 @@ export const bulkActionSchema = z.object({
   ownerId: optStr,
 });
 
-// Bulk CSV import: only assert a non-empty array of row objects. Field-level
-// coercion/defaults stay in the very lenient service.
+// Bulk spreadsheet import: enforces import format type and optional upload-time assignment.
 export const bulkImportSchema = z.object({
   rows: z.array(z.record(z.string(), z.unknown())).min(1, "rows[] required"),
+  importType: z.enum(LEAD_IMPORT_TYPES).optional(),
+  assignment: z
+    .object({
+      mode: z.enum(LEAD_IMPORT_MODES).default("default"),
+      ownerIds: z.array(z.string()).optional(),
+    })
+    .optional(),
+  skipDuplicates: optBool,
 });
 
 export const assignLeadSchema = z.object({

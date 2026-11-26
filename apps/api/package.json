@@ -1,6 +1,6 @@
 {
   "name": "@open-crm/api",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Bn Orbit API: tenant plane, operator plane, product ingest and the background worker",
   "main": "dist/index.js",

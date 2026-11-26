@@ -67,6 +67,7 @@ class TenantsRepository {
       industry: string | null;
       plan_key: string;
       brand_color?: string;
+      config?: unknown;
     },
     trx?: Transaction<DB>
   ): Promise<TenantRow> {
@@ -81,6 +82,7 @@ class TenantsRepository {
         industry: data.industry,
         plan_key: data.plan_key,
         ...(data.brand_color !== undefined ? { brand_color: data.brand_color } : {}),
+        ...(data.config !== undefined ? { config: JSON.stringify(data.config) } : {}),
         status: "ACTIVE",
         created_at: t,
         updated_at: t,
@@ -96,6 +98,7 @@ class TenantsRepository {
       brand_color: string;
       status: tenant_status;
       plan_key: string;
+      config: unknown;
     }>,
     trx?: Transaction<DB>
   ): Promise<TenantRow | undefined> {
@@ -104,6 +107,7 @@ class TenantsRepository {
     if (data.brand_color !== undefined) patch.brand_color = data.brand_color;
     if (data.status !== undefined) patch.status = data.status;
     if (data.plan_key !== undefined) patch.plan_key = data.plan_key;
+    if (data.config !== undefined) patch.config = JSON.stringify(data.config);
     return (trx || db)
       .updateTable("tenants")
       .set(patch)

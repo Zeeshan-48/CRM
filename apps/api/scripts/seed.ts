@@ -197,6 +197,11 @@ async function seedTenant(spec: TenantSpec) {
         currency: "INR",
         timezone: "Asia/Kolkata",
         region: "IN",
+        leadImport: {
+          allowedTypes: spec.edtech
+            ? ["sales", "student_admission", "medical", "construction"]
+            : ["sales"],
+        },
         security: {
           mfa: true,
           ssoGoogle: true,

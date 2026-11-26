@@ -15,8 +15,6 @@ import {
   allocateTenantNumber,
   updateTenantNumber,
   removeTenantNumber,
-  getTenantCalls,
-  getTenantCallRecording,
 } from "../../controllers/operator/tenants.controller";
 import { requireSuperadmin } from "../../middlewares/operator-auth.middleware";
 import { validateBody } from "../../middlewares/validate.middleware";
@@ -101,7 +99,5 @@ router.delete(
   asyncHandler(requireSuperadmin),
   asyncHandler(removeTenantNumber)
 );
-router.get("/:id/telephony/calls", asyncHandler(getTenantCalls));
-router.get("/:id/telephony/calls/:callId/recording", asyncHandler(getTenantCallRecording));
 
 export default router;

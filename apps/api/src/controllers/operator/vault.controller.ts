@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { BadRequestError, UnauthorizedError } from "../../errors";
+import { getRequestBaseUrl } from "../../services/storage.service";
 import vaultService from "../../services/operator/vault.service";
 import { sendSuccessResponse } from "../../utils/response.util";
 
@@ -30,6 +31,7 @@ export const getVaultData = async (req: Request, res: Response) => {
     q,
     page,
     limit,
+    baseUrl: getRequestBaseUrl(req),
   });
 
   sendSuccessResponse({ res, data: result });

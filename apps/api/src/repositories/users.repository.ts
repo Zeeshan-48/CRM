@@ -36,6 +36,7 @@ class UsersRepository {
         "tenants.brand_color as tenant_brand_color",
         "tenants.domain as tenant_domain",
         "tenants.plan_key as tenant_plan_key",
+        "tenants.config as tenant_config",
       ])
       .where(({ eb, fn }) => eb(fn("lower", ["users.email"]), "=", email.toLowerCase()))
       .execute();

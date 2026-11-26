@@ -1,6 +1,6 @@
 {
   "name": "@open-crm/web",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "Bn Orbit workspace app: the single-page app tenants sign in to",
   "type": "module",
@@ -40,6 +40,7 @@
     "react-router-dom": "^7.6.0",
     "sonner": "^2.0.3",
     "tailwind-merge": "^2.6.0",
+    "xlsx": "^0.18.5",
     "zustand": "^5.0.5"
   },
   "devDependencies": {

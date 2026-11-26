@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LEAD_IMPORT_TYPES } from "../../constants/lead-import.const";
 import { optBool, optRecord, optStr, reqStr } from "../common";
 
 // Mirrors src/db/enums.ts tenant_status.
@@ -14,6 +15,7 @@ export const onboardTenantSchema = z.object({
   domain: optStr,
   industry: optStr,
   brand_color: optStr,
+  allowed_import_types: z.array(z.enum(LEAD_IMPORT_TYPES)).optional(),
   gateway: optStr,
   billingMode: z.enum(["AUTO", "MANUAL"]).optional(),
   admin: z.object({
@@ -31,6 +33,7 @@ export const updateTenantSchema = z.object({
   brand_color: z.string().optional(),
   status: z.enum(TENANT_STATUS).optional(),
   plan_key: z.string().optional(),
+  allowed_import_types: z.array(z.enum(LEAD_IMPORT_TYPES)).optional(),
 });
 
 // `limit_value` is nullable: null clears the cap (unlimited).

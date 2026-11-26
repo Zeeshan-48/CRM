@@ -12,6 +12,7 @@ import {
   removeNumber,
   saveConfig,
   setAvailability,
+  updateCallState,
   updateNumber,
   validateConfig,
 } from "../controllers/telephony.controller";
@@ -30,6 +31,7 @@ router.post("/validate", asyncHandler(requireCapability("channels")), asyncHandl
 router.delete("/", asyncHandler(requireCapability("channels")), asyncHandler(removeConfig));
 router.post("/call", asyncHandler(placeCall));
 router.get("/calls", asyncHandler(listCalls));
+router.patch("/calls/:id/state", asyncHandler(updateCallState));
 // Manual log for calls dialed from an agent's personal SIM; open like /call.
 router.post("/calls/manual", asyncHandler(logManualCall));
 router.get("/calls/:id/recording", asyncHandler(getRecordingUrl));

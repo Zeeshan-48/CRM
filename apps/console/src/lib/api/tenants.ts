@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/lib/api/client";
 import type {
   Entitlement,
+  LeadImportType,
   OnboardTenantPayload,
   OnboardTenantResponse,
   Tenant,
@@ -50,6 +51,7 @@ export const updateTenant = (
     brand_color?: string;
     status?: TenantStatus;
     plan_key?: string;
+    allowed_import_types?: LeadImportType[];
   }
 ) => apiPut<Tenant>(`/tenants/${id}`, payload);
 
@@ -80,36 +82,3 @@ export const updateTenantNumber = (
 
 export const removeTenantNumber = (tenantId: string, numberId: string) =>
   apiDelete<{ ok: boolean }>(`/tenants/${tenantId}/telephony/numbers/${numberId}`);
-
-export interface TenantCall {
-  id: string;
-  tenant_id: string;
-  lead_id: string | null;
-  contact_id: string | null;
-  user_id: string | null;
-  agent_name?: string | null;
-  agent_email?: string | null;
-  lead_name?: string | null;
-  lead_company?: string | null;
-  contact_name?: string | null;
-  contact_company?: string | null;
-  from_number: string | null;
-  to_number: string | null;
-  direction: "INBOUND" | "OUTBOUND";
-  call_status: string | null;
-  outcome: string | null;
-  duration_sec: number | null;
-  recording_url: string | null;
-  provider: string;
-  simulated: boolean;
-  call_error: string | null;
-  created_at: string;
-}
-
-export const getTenantCalls = (tenantId: string) =>
-  apiGet<TenantCall[]>(`/tenants/${tenantId}/telephony/calls`);
-
-export const getTenantCallRecording = (tenantId: string, callId: string) =>
-  apiGet<{ url: string | null; pending: boolean }>(
-    `/tenants/${tenantId}/telephony/calls/${callId}/recording`
-  );

@@ -627,6 +627,8 @@ export type leads = {
   external_id: string | null;
   external_source: string | null;
   custom_fields: unknown | null;
+  import_type: string | null;
+  extra_fields: unknown | null;
   last_activity_at: Timestamp | null;
   created_at: Timestamp;
   updated_at: Timestamp;

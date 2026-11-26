@@ -223,6 +223,7 @@ class VaultService {
     q?: string;
     page?: number;
     limit?: number;
+    baseUrl?: string;
   }) {
     const page = Math.max(1, params.page || 1);
     const limit = Math.min(200, Math.max(1, params.limit || 50));
@@ -542,7 +543,7 @@ class VaultService {
                 if (item.recording_url.startsWith("http://") || item.recording_url.startsWith("https://")) {
                   audio_url = item.recording_url;
                 } else {
-                  audio_url = await storageService.getDownloadUrl(item.recording_url, 3600);
+                  audio_url = await storageService.getDownloadUrl(item.recording_url, 3600, params.baseUrl);
                 }
               } catch (e) {
                 logger.warn(`Failed to sign audio url for call ${item.id}: ${String(e)}`);

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ModuleKey } from "../constants/modules.const";
 import { authenticateUser } from "../middlewares/auth.middleware";
 import { requireModule } from "../middlewares/module.middleware";
+import { userApiLimiter } from "../middlewares/rate-limit.middleware";
 import { asyncHandler } from "../utils/asynchandler";
 
 import accountsRouter from "./accounts.route";
@@ -59,7 +60,7 @@ rootRouter.use("/public/booking", publicBookingRouter);
 
 // ---- Authenticated, not module-gated (workspace basics) ----
 const A = (path: string, router: Router) => {
-  rootRouter.use(path, asyncHandler(authenticateUser), router);
+  rootRouter.use(path, asyncHandler(authenticateUser), userApiLimiter, router);
 };
 A("/tenant", tenantsRouter);
 A("/users", usersRouter);
@@ -74,6 +75,7 @@ const M = (path: string, moduleKey: ModuleKey, router: Router) => {
   rootRouter.use(
     path,
     asyncHandler(authenticateUser),
+    userApiLimiter,
     asyncHandler(requireModule(moduleKey)),
     router
   );

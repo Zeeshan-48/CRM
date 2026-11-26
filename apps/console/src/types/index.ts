@@ -73,6 +73,7 @@ export interface Plan {
 // ---- Tenants ----
 
 export type TenantStatus = "ACTIVE" | "SUSPENDED" | "CLOSED";
+export type LeadImportType = "sales" | "student_admission" | "medical" | "construction";
 
 export interface Tenant {
   id: string;
@@ -85,6 +86,7 @@ export interface Tenant {
   email_domain: string | null;
   white_label: boolean;
   status: TenantStatus;
+  allowed_import_types?: LeadImportType[];
   created_at: string;
   updated_at: string;
 }
@@ -193,6 +195,7 @@ export interface OnboardTenantPayload {
   domain?: string;
   brand_color?: string;
   plan_key: string;
+  allowed_import_types?: LeadImportType[];
   // Optional platform-billing gateway. When set, the tenant is created SUSPENDED
   // with a PENDING subscription (payment upfront); omitted = active immediately.
   gateway?: BillingGateway;

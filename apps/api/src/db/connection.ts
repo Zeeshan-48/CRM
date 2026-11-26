@@ -3,6 +3,7 @@
 // serializes Date objects using local-time getters.
 process.env.TZ = "UTC";
 
+import os from "os";
 import pg, { Pool, PoolConfig } from "pg";
 import { Kysely, PostgresDialect } from "kysely";
 import config from "../config";
@@ -16,6 +17,12 @@ pg.types.setTypeParser(1114, (val: string) => new Date(val + "+00"));
 
 const getPoolConfig = (): PoolConfig => {
   const isProd = config.isProduction;
+  const workerCount = isProd
+    ? Math.max(1, Math.min(Number(process.env.WEB_CONCURRENCY || os.cpus().length), 16))
+    : 1;
+  // Budget ~80 total Postgres connections across cluster workers so high-core hosts
+  // don't exceed Postgres max_connections while honoring explicit PG_POOL_MAX.
+  const prodDefaultMax = Math.max(3, Math.min(10, Math.floor(80 / workerCount)));
   return {
     host: config.PG_DATABASE_HOST,
     user: config.PG_DATABASE_USER,
@@ -24,7 +31,7 @@ const getPoolConfig = (): PoolConfig => {
     database: config.PG_DATABASE,
     application_name: `open-crm-api-${process.pid}`,
     keepAlive: true,
-    max: config.PG_POOL_MAX ? Number(config.PG_POOL_MAX) : isProd ? 8 : 10,
+    max: config.PG_POOL_MAX ? Number(config.PG_POOL_MAX) : isProd ? prodDefaultMax : 10,
     min: config.PG_POOL_MIN ? Number(config.PG_POOL_MIN) : 0,
     connectionTimeoutMillis: config.PG_CONNECTION_TIMEOUT
       ? Number(config.PG_CONNECTION_TIMEOUT)

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { ForbiddenError } from "../errors";
+import { getRequestBaseUrl } from "../services/storage.service";
 import telephonyService from "../services/telephony.service";
 import { HttpSuccessStatus, sendSuccessResponse } from "../utils/response.util";
 
@@ -56,6 +57,20 @@ export const listCalls = async (req: Request, res: Response) => {
   sendSuccessResponse({ res, data: await telephonyService.listCalls(tenantId) });
 };
 
+export const updateCallState = async (req: Request, res: Response) => {
+  const { tenantId, actorId } = ctx(req);
+  sendSuccessResponse({
+    res,
+    data: await telephonyService.updateCallState(
+      tenantId,
+      actorId,
+      String(req.params.id),
+      req.body ?? {}
+    ),
+    message: "Call status updated",
+  });
+};
+
 // Returns dynamically provisioned Plivo WebRTC credentials for in-browser calling
 export const getWebRTCSession = async (req: Request, res: Response) => {
   const { tenantId, actorId } = ctx(req);
@@ -83,7 +98,7 @@ export const getRecordingUrl = async (req: Request, res: Response) => {
   const { tenantId } = ctx(req);
   sendSuccessResponse({
     res,
-    data: await telephonyService.recordingUrl(tenantId, String(req.params.id)),
+    data: await telephonyService.recordingUrl(tenantId, String(req.params.id), getRequestBaseUrl(req)),
   });
 };
 

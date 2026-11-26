@@ -68,3 +68,39 @@ export const LIMIT_LABELS: Record<string, string> = {
 
 export const limitLabel = (code: string): string =>
   LIMIT_LABELS[code] ?? code.replace(LIMIT_CODE_PREFIX, "");
+
+export const LEAD_IMPORT_TYPES = [
+  "sales",
+  "student_admission",
+  "medical",
+  "construction",
+] as const;
+
+export type LeadImportType = (typeof LEAD_IMPORT_TYPES)[number];
+
+export const LEAD_IMPORT_TYPE_OPTIONS: {
+  key: LeadImportType;
+  label: string;
+  fieldsSummary: string;
+}[] = [
+  {
+    key: "sales",
+    label: "Sales Data",
+    fieldsSummary: "Company Name, CIN, Email, Director Name, Mobile Number, State, Activity",
+  },
+  {
+    key: "student_admission",
+    label: "Student Admission",
+    fieldsSummary: "Name, Mobile, Email, State/City, Exam, Percentage",
+  },
+  {
+    key: "medical",
+    label: "Medical Data",
+    fieldsSummary: "Business / Organization Name, Owner / Person Name, Email, Address, Mobile",
+  },
+  {
+    key: "construction",
+    label: "Construction Data",
+    fieldsSummary: "Business / Organization Name, Owner / Person Name, Email, Address, Mobile",
+  },
+];

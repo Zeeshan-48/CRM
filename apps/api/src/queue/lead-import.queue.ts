@@ -1,14 +1,29 @@
 import { Queue } from "bullmq";
+import type {
+  LeadImportAssignmentSpec,
+  LeadImportType,
+} from "../constants/lead-import.const";
 import { getRedis } from "../db/redis";
 import { createQueueConnection, isQueueEnabled } from "./connection";
 import logger from "../utils/logger";
 
 export const LEAD_IMPORT_QUEUE_NAME = "crm-lead-import";
 
+export interface SkippedImportRow {
+  rowNumber: number;
+  name: string;
+  email: string;
+  phone: string;
+  reason: string;
+}
+
 export interface LeadImportJobData {
   jobId: string;
   tenantId: string;
   actorId: string;
+  importType: LeadImportType;
+  assignment: LeadImportAssignmentSpec;
+  skipDuplicates: boolean;
   rows: Record<string, unknown>[];
 }
 
@@ -16,11 +31,13 @@ export interface LeadImportProgress {
   jobId: string;
   tenantId: string;
   actorId: string;
+  importType?: LeadImportType;
   status: "queued" | "processing" | "completed" | "failed";
   total: number;
   processed: number;
   imported: number;
   skipped: number;
+  skippedRows?: SkippedImportRow[];
   percent: number;
   error?: string;
   createdAt: string;
@@ -94,11 +111,13 @@ export const enqueueLeadImport = async (data: LeadImportJobData): Promise<void> 
     jobId: data.jobId,
     tenantId: data.tenantId,
     actorId: data.actorId,
+    importType: data.importType,
     status: "queued",
     total: data.rows.length,
     processed: 0,
     imported: 0,
     skipped: 0,
+    skippedRows: [],
     percent: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

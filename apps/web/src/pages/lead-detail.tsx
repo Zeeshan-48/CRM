@@ -43,6 +43,7 @@ import { LogActivityCard } from "@/components/activities/LogActivityCard";
 import { TimelineTypeFilter } from "@/components/activities/TimelineTypeFilter";
 import { PlatformActivityCard } from "@/components/leads/PlatformActivityCard";
 import { ProductEngagementCard } from "@/components/products/ProductEngagementCard";
+import { IMPORT_TYPE_LABELS } from "@/lib/lead-import";
 import { LogCallDialog } from "@/components/telephony/LogCallDialog";
 import { RecordingPlayer } from "@/components/telephony/RecordingPlayer";
 import type { VoiceCall } from "@/lib/api/contacts";
@@ -655,8 +656,33 @@ function CallRow({ call }: { call: VoiceCall }) {
   );
 }
 
-type LeadSection = "contact" | "details" | "notes" | "socials";
+type LeadSection = "contact" | "details" | "profile" | "notes" | "socials";
 type TextField = "name" | "email" | "phone" | "city" | "source" | "campaign";
+
+const PROFILE_FIELDS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
+  sales: [
+    { key: "company_name", label: "Company Name" },
+    { key: "cin", label: "CIN" },
+    { key: "director_name", label: "Director Name" },
+    { key: "state", label: "State" },
+    { key: "activity", label: "Activity" },
+  ],
+  student_admission: [
+    { key: "state_city", label: "State / City" },
+    { key: "exam", label: "Exam" },
+    { key: "percentage", label: "Percentage" },
+  ],
+  medical: [
+    { key: "business_name", label: "Business / Organization Name" },
+    { key: "owner_name", label: "Owner / Person Name" },
+    { key: "address", label: "Address" },
+  ],
+  construction: [
+    { key: "business_name", label: "Business / Organization Name" },
+    { key: "owner_name", label: "Owner / Person Name" },
+    { key: "address", label: "Address" },
+  ],
+};
 
 /** Lead overview: clean, read-only sections that each flip to an editable form
  *  via their own Edit button. Remounts (via key) whenever the lead is saved. */
@@ -676,8 +702,11 @@ function OverviewForm({ lead }: { lead: LeadDetail }) {
     budget: lead.budget,
   });
   const seedSocials = (): SocialsValue => (lead.socials as SocialsValue | null) ?? {};
+  const seedExtraFields = (): Record<string, string> =>
+    lead.extra_fields && typeof lead.extra_fields === "object" ? { ...lead.extra_fields } : {};
   const [form, setForm] = React.useState(seedForm);
   const [socials, setSocials] = React.useState<SocialsValue>(seedSocials);
+  const [extraFields, setExtraFields] = React.useState<Record<string, string>>(seedExtraFields);
 
   const saveMutation = useMutation({
     mutationFn: (patch: Parameters<typeof updateLead>[1]) => updateLead(lead.id, patch),
@@ -695,11 +724,13 @@ function OverviewForm({ lead }: { lead: LeadDetail }) {
   const openEdit = (section: LeadSection) => {
     setForm(seedForm());
     setSocials(seedSocials());
+    setExtraFields(seedExtraFields());
     setEditing(section);
   };
   const cancelEdit = () => {
     setForm(seedForm());
     setSocials(seedSocials());
+    setExtraFields(seedExtraFields());
     setEditing(null);
   };
   const savingFor = (section: LeadSection) =>
@@ -824,6 +855,45 @@ function OverviewForm({ lead }: { lead: LeadDetail }) {
         )}
       </SectionCard>
 
+      {/* Structured Vertical Profile (Sales / Student / Medical / Construction) */}
+      {lead.import_type && PROFILE_FIELDS_BY_TYPE[lead.import_type] ? (
+        <SectionCard
+          title={`${IMPORT_TYPE_LABELS[lead.import_type]} Details`}
+          editing={editing === "profile"}
+          saving={savingFor("profile")}
+          onEdit={() => openEdit("profile")}
+          onCancel={cancelEdit}
+          onSave={() => saveMutation.mutate({ extra_fields: extraFields })}
+        >
+          {editing === "profile" ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {PROFILE_FIELDS_BY_TYPE[lead.import_type].map((field) => (
+                <div key={field.key} className="grid gap-1.5">
+                  <Label htmlFor={`ef-${field.key}`}>{field.label}</Label>
+                  <Input
+                    id={`ef-${field.key}`}
+                    value={extraFields[field.key] ?? ""}
+                    onChange={(e) =>
+                      setExtraFields((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <dl className="grid gap-4 sm:grid-cols-2">
+              {PROFILE_FIELDS_BY_TYPE[lead.import_type].map((field) => (
+                <FieldRow
+                  key={field.key}
+                  label={field.label}
+                  value={lead.extra_fields?.[field.key]}
+                />
+              ))}
+            </dl>
+          )}
+        </SectionCard>
+      ) : null}
+
       {/* Notes */}
       <SectionCard
         title="Notes"
@@ -923,6 +993,7 @@ export default function LeadDetailPage() {
   const [strategy, setStrategy] = React.useState("ROUND_ROBIN");
   const [manualOwner, setManualOwner] = React.useState("");
   const [convertForm, setConvertForm] = React.useState({
+    accountName: "",
     contactName: "",
     email: "",
     phone: "",
@@ -934,13 +1005,16 @@ export default function LeadDetailPage() {
 
   React.useEffect(() => {
     if (convertOpen && lead) {
+      const companyCandidate =
+        lead.extra_fields?.company_name || lead.extra_fields?.business_name || "";
       setConvertForm({
+        accountName: companyCandidate,
         contactName: lead.name || "",
         email: lead.email || "",
         phone: lead.phone || "",
         city: lead.city || "",
         createDeal: true,
-        dealTitle: `${(lead.name || "Deal").split(" ")[0]} - Deal`,
+        dealTitle: `${(companyCandidate || lead.name || "Deal").split(" ")[0]} - Deal`,
         dealValue: "50000",
       });
     }
@@ -975,6 +1049,7 @@ export default function LeadDetailPage() {
   const convertMutation = useMutation({
     mutationFn: () =>
       convertLead(id, {
+        accountName: convertForm.accountName.trim() || undefined,
         contactName: convertForm.contactName.trim() || undefined,
         email: convertForm.email.trim() || undefined,
         phone: convertForm.phone.trim() || undefined,
@@ -1763,6 +1838,18 @@ export default function LeadDetailPage() {
                 Contact Details
               </p>
               <div className="grid gap-2">
+                <div>
+                  <Label htmlFor="c-account" className="text-xs">Company / Organization Account (optional)</Label>
+                  <Input
+                    id="c-account"
+                    value={convertForm.accountName}
+                    onChange={(e) =>
+                      setConvertForm({ ...convertForm, accountName: e.target.value })
+                    }
+                    placeholder="Auto-creates or links company account"
+                    className="h-8 text-xs"
+                  />
+                </div>
                 <div>
                   <Label htmlFor="c-name" className="text-xs">Contact Name *</Label>
                   <Input

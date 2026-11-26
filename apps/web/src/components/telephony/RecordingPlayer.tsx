@@ -1,13 +1,17 @@
+import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 
 import { Spinner } from "@/components/ui/spinner";
 import { getRecordingUrl } from "@/lib/api/telephony";
+import { downloadRecordingFile } from "@/lib/download";
 
 // Direct inline player for call recordings.
 // Rendered immediately so users don't have to tap twice (tap once to reveal, tap again to play).
 // Uses preload="none" so audio bytes are only fetched when the user hits play.
 export function RecordingPlayer({ callId }: { callId: string }) {
+  const [downloading, setDownloading] = React.useState(false);
+
   const urlQuery = useQuery({
     queryKey: ["call-recording", callId],
     queryFn: () => getRecordingUrl(callId),
@@ -32,9 +36,20 @@ export function RecordingPlayer({ callId }: { callId: string }) {
     );
   }
 
-  if (!urlQuery.data?.url) {
+  const audioUrl = urlQuery.data?.url;
+  if (!audioUrl) {
     return <span className="py-1 text-[11px] text-muted-foreground">Recording unavailable</span>;
   }
+
+  const handleDownload = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadRecordingFile(audioUrl, `recording-${callId}.mp3`);
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="flex items-center gap-2 py-0.5">
@@ -42,20 +57,19 @@ export function RecordingPlayer({ callId }: { callId: string }) {
       <audio
         controls
         preload="none"
-        src={urlQuery.data.url}
+        src={audioUrl}
         className="h-8 w-48 sm:w-56 md:w-64 accent-brand rounded"
       />
-      <a
-        href={urlQuery.data.url}
-        download={`recording-${callId}.mp3`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border rounded px-2.5 py-1 transition-colors h-7 shrink-0 shadow-sm"
+      <button
+        type="button"
+        onClick={() => void handleDownload()}
+        disabled={downloading}
+        className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border rounded px-2.5 py-1 transition-colors h-7 shrink-0 shadow-sm disabled:opacity-60"
         title="Download MP3 Recording"
       >
-        <Download className="size-3 text-slate-600" />
+        {downloading ? <Spinner size="sm" /> : <Download className="size-3 text-slate-600" />}
         MP3
-      </a>
+      </button>
     </div>
   );
 }

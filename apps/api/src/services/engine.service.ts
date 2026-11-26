@@ -1,6 +1,13 @@
 import { ulid } from "ulid";
 import { db } from "../db/connection";
 import type { channel as ChannelEnum, message_direction } from "../db/enums";
+import { isQueueEnabled } from "../queue/connection";
+import {
+  enqueueWorkflowDelivery,
+  type WorkflowDeliveryJobData,
+  type WorkflowEmailJobData,
+  type WorkflowWhatsappJobData,
+} from "../queue/workflow-delivery.queue";
 import logger from "../utils/logger";
 import { sentiment } from "./ai/heuristics";
 import { aiProvider } from "./ai/provider";
@@ -96,6 +103,8 @@ export interface WorkflowCtx {
   lead?: { id: string; name: string; owner_id?: string | null; tags?: unknown } | null;
   contact?: { id: string; name: string; company?: string | null; tags?: unknown } | null;
   deal?: { id: string } | null;
+  /** When true (e.g. lead imported with explicit upload-time owner/unassigned), ASSIGN_AGENT must not override. */
+  preserveOwner?: boolean;
 }
 
 interface WorkflowAction {
@@ -367,6 +376,99 @@ class EngineService {
     return null;
   }
 
+  /** Executes queued or fallback email/WhatsApp delivery for a workflow action. */
+  async processQueuedDelivery(job: WorkflowDeliveryJobData): Promise<void> {
+    if (job.kind === "whatsapp") {
+      await this.deliverWorkflowWhatsapp(job);
+      return;
+    }
+    await this.deliverWorkflowEmail(job);
+  }
+
+  private async deliverWorkflowWhatsapp(job: WorkflowWhatsappJobData): Promise<void> {
+    const template = await this.resolveWaTemplate(job.tenantId, job.templateKey);
+    const body = template.replace(/{name}/g, firstName(job.targetName));
+    const delivery = await whatsappDeliveryService.deliver(job.tenantId, {
+      leadId: job.leadId,
+      contactId: job.contactId,
+      templateName: job.templateKey,
+      bodyParams: [firstName(job.targetName)],
+    });
+    await this.sendMessage({
+      tenantId: job.tenantId,
+      channel: "WHATSAPP",
+      ref: {
+        leadId: job.leadId,
+        contactId: job.contactId,
+        subject: "WhatsApp",
+      },
+      direction: "OUTBOUND",
+      body,
+      simulated: delivery.simulated,
+      externalId: delivery.messageId,
+    });
+  }
+
+  private async deliverWorkflowEmail(job: WorkflowEmailJobData): Promise<void> {
+    const template = await this.resolveEmailTemplate(job.tenantId, job.templateName);
+    const fill = (s: string) =>
+      s
+        .replace(/{name}/g, firstName(job.targetName))
+        .replace(/{company}/g, job.company);
+    const subject = fill(template.subject);
+    const emailBody = fill(template.body);
+    // Deliver over SES/SMTP when keyed and the recipient has an email; the
+    // send is best-effort so a transport failure never breaks the run.
+    const to = await this.recipientEmail(job.tenantId, {
+      leadId: job.leadId,
+      contactId: job.contactId,
+    });
+    let simulated = true;
+    if (to) {
+      try {
+        const delivery = await mailerService.send({
+          tenantId: job.tenantId,
+          category: "NOTIFICATION",
+          to,
+          subject,
+          text: emailBody,
+        });
+        simulated = delivery.provider === "SIMULATED";
+      } catch (err) {
+        logger.warn(`workflow SEND_EMAIL transport failed: ${String(err)}`);
+      }
+    }
+    await this.sendMessage({
+      tenantId: job.tenantId,
+      channel: "EMAIL",
+      ref: {
+        leadId: job.leadId,
+        contactId: job.contactId,
+        subject,
+      },
+      direction: "OUTBOUND",
+      body: emailBody,
+      simulated,
+    });
+  }
+
+  private async dispatchWorkflowDelivery(job: WorkflowDeliveryJobData): Promise<void> {
+    const underTest = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
+    if (underTest) {
+      await this.processQueuedDelivery(job);
+      return;
+    }
+    if (isQueueEnabled()) {
+      const queued = await enqueueWorkflowDelivery(job);
+      if (queued) return;
+    }
+    // Fire-and-forget when Redis is unavailable outside tests so slow SMTP/Meta
+    // calls never stall user HTTP requests like POST /leads.
+    void this.processQueuedDelivery(job).catch((err) => {
+      logger.warn(`async workflow delivery fallback failed (${job.kind}): ${String(err)}`);
+    });
+  }
+
   private async runActions(
     tenantId: string,
     userId: string | null,
@@ -377,7 +479,7 @@ class EngineService {
     for (const action of parseActions(workflow.actions)) {
       const p = action.params ?? {};
       try {
-        if (action.type === "ASSIGN_AGENT" && ctx.lead) {
+        if (action.type === "ASSIGN_AGENT" && ctx.lead && !ctx.preserveOwner) {
           const agent = await this.roundRobinAgent(
             tenantId,
             typeof p.role === "string" ? p.role : "SALES_AGENT"
@@ -400,71 +502,26 @@ class EngineService {
         } else if (action.type === "SEND_WHATSAPP") {
           const target = ctx.lead || ctx.contact;
           const templateKey = typeof p.templateKey === "string" ? p.templateKey : "welcome";
-          const template = await this.resolveWaTemplate(tenantId, templateKey);
-          const body = template.replace(/{name}/g, firstName(target?.name));
-          // Automation sends are cold, so deliver via the approved Meta template.
-          const delivery = await whatsappDeliveryService.deliver(tenantId, {
+          await this.dispatchWorkflowDelivery({
+            kind: "whatsapp",
+            tenantId,
             leadId: ctx.lead?.id ?? null,
             contactId: ctx.contact?.id ?? null,
-            templateName: templateKey,
-            bodyParams: [firstName(target?.name)],
-          });
-          await this.sendMessage({
-            tenantId,
-            channel: "WHATSAPP",
-            ref: {
-              leadId: ctx.lead?.id ?? null,
-              contactId: ctx.contact?.id ?? null,
-              subject: "WhatsApp",
-            },
-            direction: "OUTBOUND",
-            body,
-            simulated: delivery.simulated,
-            externalId: delivery.messageId,
+            targetName: target?.name ?? "",
+            templateKey,
           });
           log.push("Sent WhatsApp");
         } else if (action.type === "SEND_EMAIL") {
           const target = ctx.lead || ctx.contact;
           const templateName = typeof p.templateName === "string" ? p.templateName : "Welcome";
-          const template = await this.resolveEmailTemplate(tenantId, templateName);
-          const fill = (s: string) =>
-            s
-              .replace(/{name}/g, firstName(target?.name))
-              .replace(/{company}/g, ctx.contact?.company ?? "");
-          const subject = fill(template.subject);
-          const emailBody = fill(template.body);
-          // Deliver over SES when keyed and the recipient has an email; the
-          // send is best-effort so a transport failure never breaks the run.
-          const to = await this.recipientEmail(tenantId, {
+          await this.dispatchWorkflowDelivery({
+            kind: "email",
+            tenantId,
             leadId: ctx.lead?.id ?? null,
             contactId: ctx.contact?.id ?? null,
-          });
-          let simulated = true;
-          if (to) {
-            try {
-              const delivery = await mailerService.send({
-                tenantId,
-                category: "NOTIFICATION",
-                to,
-                subject,
-                text: emailBody,
-              });
-              simulated = delivery.provider === "SIMULATED";
-            } catch (err) {
-              logger.warn(`workflow SEND_EMAIL transport failed: ${String(err)}`);
-            }
-          }
-          await this.sendMessage({
-            tenantId,
-            channel: "EMAIL",
-            ref: {
-              leadId: ctx.lead?.id ?? null,
-              contactId: ctx.contact?.id ?? null,
-              subject,
-            },
-            direction: "OUTBOUND",
-            body: emailBody,
-            simulated,
+            targetName: target?.name ?? "",
+            company: ctx.contact?.company ?? "",
+            templateName,
           });
           log.push("Sent email");
         } else if (action.type === "CREATE_TASK") {

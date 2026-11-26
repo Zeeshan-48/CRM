@@ -66,6 +66,7 @@ CREATE TABLE "leads" (
   "status" TEXT NOT NULL DEFAULT 'NEW',
   "owner_id" TEXT,
   "tags" JSONB,
+  "socials" JSONB,
   "notes" TEXT,
   "budget" BOOLEAN NOT NULL DEFAULT false,
   "score_total" INTEGER NOT NULL DEFAULT 0,
@@ -74,13 +75,16 @@ CREATE TABLE "leads" (
   "scored_at" TIMESTAMP,
   "converted_contact_id" TEXT,
   "converted_deal_id" TEXT,
+  "external_id" TEXT,
+  "external_source" TEXT,
+  "custom_fields" JSONB,
   "last_activity_at" TIMESTAMP,
   "created_at" TIMESTAMP NOT NULL,
   "updated_at" TIMESTAMP NOT NULL,
-  "external_id" TEXT,
-  "external_source" TEXT,
-  "socials" JSONB,
-  "custom_fields" JSONB,
+  "deleted_at" TIMESTAMP,
+  "deleted_by" TEXT,
+  "import_type" TEXT,
+  "extra_fields" JSONB,
   PRIMARY KEY ("id")
 );
 
@@ -102,6 +106,8 @@ CREATE TABLE "contacts" (
   "last_activity_at" TIMESTAMP,
   "created_at" TIMESTAMP NOT NULL,
   "updated_at" TIMESTAMP NOT NULL,
+  "deleted_at" TIMESTAMP,
+  "deleted_by" TEXT,
   PRIMARY KEY ("id")
 );
 
@@ -128,6 +134,8 @@ CREATE TABLE "deals" (
   "health_label" TEXT,
   "created_at" TIMESTAMP NOT NULL,
   "updated_at" TIMESTAMP NOT NULL,
+  "deleted_at" TIMESTAMP,
+  "deleted_by" TEXT,
   PRIMARY KEY ("id")
 );
 
@@ -166,9 +174,9 @@ CREATE TABLE "activities" (
   "contact_id" TEXT,
   "deal_id" TEXT,
   "duration_sec" INTEGER,
+  "ai_generated" BOOLEAN NOT NULL DEFAULT false,
   "created_at" TIMESTAMP NOT NULL,
   "updated_at" TIMESTAMP NOT NULL,
-  "ai_generated" BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY ("id")
 );
 
@@ -185,12 +193,12 @@ CREATE TABLE "messages" (
   "sentiment" TEXT,
   "sentiment_score" INTEGER,
   "simulated" BOOLEAN NOT NULL DEFAULT true,
-  "at" TIMESTAMP NOT NULL,
-  "created_at" TIMESTAMP NOT NULL,
-  "updated_at" TIMESTAMP NOT NULL,
   "external_id" TEXT,
   "status" TEXT,
   "campaign_id" TEXT,
+  "at" TIMESTAMP NOT NULL,
+  "created_at" TIMESTAMP NOT NULL,
+  "updated_at" TIMESTAMP NOT NULL,
   PRIMARY KEY ("id")
 );
 
@@ -201,12 +209,12 @@ CREATE TABLE "api_keys" (
   "key_hash" TEXT NOT NULL,
   "key_prefix" TEXT NOT NULL,
   "created_by" TEXT,
+  "app_id" TEXT,
+  "scope" TEXT NOT NULL DEFAULT 'SECRET',
   "last_used_at" TIMESTAMP,
   "revoked_at" TIMESTAMP,
   "created_at" TIMESTAMP NOT NULL,
   "updated_at" TIMESTAMP NOT NULL,
-  "app_id" TEXT,
-  "scope" TEXT NOT NULL DEFAULT 'SECRET',
   PRIMARY KEY ("id")
 );
 
@@ -506,15 +514,15 @@ CREATE TABLE "activity_events" (
   "payload" JSONB,
   "error" TEXT,
   "created_at" TIMESTAMP NOT NULL,
-  "anonymous_id" TEXT,
   "app_id" TEXT,
-  "contact_id" TEXT,
-  "currency" TEXT,
-  "page_url" TEXT,
   "product_id" TEXT,
-  "referrer" TEXT,
+  "contact_id" TEXT,
+  "anonymous_id" TEXT,
   "session_id" TEXT,
+  "page_url" TEXT,
+  "referrer" TEXT,
   "value_minor" INTEGER,
+  "currency" TEXT,
   PRIMARY KEY ("id")
 );
 

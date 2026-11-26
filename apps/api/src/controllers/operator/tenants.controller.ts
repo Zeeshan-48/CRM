@@ -134,16 +134,3 @@ export const removeTenantNumber = async (req: Request, res: Response) => {
     message: "Virtual number removed from tenant",
   });
 };
-
-export const getTenantCalls = async (req: Request, res: Response) => {
-  const result = await tenantsService.listTenantCalls(String(req.params.id));
-  sendSuccessResponse({ res, data: result });
-};
-
-export const getTenantCallRecording = async (req: Request, res: Response) => {
-  const result = await tenantsService.getTenantCallRecording(
-    String(req.params.id),
-    String(req.params.callId)
-  );
-  sendSuccessResponse({ res, data: result });
-};

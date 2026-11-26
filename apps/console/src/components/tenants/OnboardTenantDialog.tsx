@@ -33,7 +33,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { onboardTenant } from "@/lib/api/tenants";
-import { moduleLabel } from "@/lib/constants/modules";
+import {
+  LEAD_IMPORT_TYPE_OPTIONS,
+  moduleLabel,
+  type LeadImportType,
+} from "@/lib/constants/modules";
 import { formatMoney, formatNumber, slugify } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { BillingGateway, BillingMode, OnboardTenantResponse, Plan } from "@/types";
@@ -56,6 +60,7 @@ interface FormState {
   domain: string;
   brandColor: string;
   planKey: string;
+  allowedImportTypes: LeadImportType[];
   gateway: string; // "NONE" | "RAZORPAY" | "STRIPE"
   billingMode: string; // "AUTO" | "MANUAL"
   adminName: string;
@@ -70,6 +75,7 @@ const INITIAL_FORM: FormState = {
   domain: "",
   brandColor: DEFAULT_BRAND_COLOR,
   planKey: "",
+  allowedImportTypes: [],
   gateway: "NONE",
   billingMode: "MANUAL",
   adminName: "",
@@ -144,6 +150,7 @@ export function OnboardTenantDialog({ open, onOpenChange, plans }: OnboardTenant
       ...(form.domain.trim() ? { domain: form.domain.trim() } : {}),
       brand_color: form.brandColor,
       plan_key: form.planKey,
+      allowed_import_types: form.allowedImportTypes,
       ...(form.gateway !== "NONE"
         ? {
             gateway: form.gateway as BillingGateway,
@@ -317,6 +324,48 @@ export function OnboardTenantDialog({ open, onOpenChange, plans }: OnboardTenant
                 </p>
               </div>
             ) : null}
+
+            <div className="space-y-1.5">
+              <Label>Allowed Lead Import Formats</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {LEAD_IMPORT_TYPE_OPTIONS.map((opt) => {
+                  const checked = form.allowedImportTypes.includes(opt.key);
+                  const inputId = `onboard-import-${opt.key}`;
+                  return (
+                    <div
+                      key={opt.key}
+                      className={cn(
+                        "flex items-start gap-2 rounded-md border p-2.5 text-xs transition-colors hover:bg-muted/40",
+                        checked ? "border-brand/50 bg-brand/5" : "border-border"
+                      )}
+                    >
+                      <input
+                        id={inputId}
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          patch({
+                            allowedImportTypes: checked
+                              ? form.allowedImportTypes.filter((k) => k !== opt.key)
+                              : [...form.allowedImportTypes, opt.key],
+                          })
+                        }
+                        className="mt-0.5 size-3.5 shrink-0 cursor-pointer accent-brand"
+                      />
+                      <label htmlFor={inputId} className="min-w-0 flex-1 cursor-pointer">
+                        <span className="block font-medium text-foreground">{opt.label}</span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {opt.fieldsSummary}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Leave unchecked to keep Excel/CSV bulk import disabled until configured later.
+              </p>
+            </div>
 
             <div className="space-y-1.5">
               <Label htmlFor="onboard-billing">Billing</Label>

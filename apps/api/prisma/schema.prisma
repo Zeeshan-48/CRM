@@ -226,6 +226,8 @@ model leads {
   // plan_status, courses_published, checkout_abandoned). Not semantically owned
   // like tags/socials/score_breakdown, a generic bag maintained by ingest.
   custom_fields        Json?
+  import_type          String?
+  extra_fields         Json?
   last_activity_at     DateTime?
   created_at           DateTime
   updated_at           DateTime
@@ -239,6 +241,7 @@ model leads {
   @@index([tenant_id, source])
   @@index([tenant_id, score_grade])
   @@index([tenant_id, created_at])
+  @@index([tenant_id, import_type])
 }
 
 model lead_documents {

@@ -329,7 +329,12 @@ class PlivoWebphoneService {
       console.log("[Webphone] Call terminated:", callInfo);
       this.ensureRemoteAudio();
       this.cleanupCall();
-      this.setState("LOGGED_IN");
+      this.setState("ENDED");
+      setTimeout(() => {
+        if (this.state === "ENDED") {
+          this.setState("LOGGED_IN");
+        }
+      }, 250);
     });
 
     sip.on("onCallFailed", (err: any) => {

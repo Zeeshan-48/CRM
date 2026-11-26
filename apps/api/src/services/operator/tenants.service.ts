@@ -1,6 +1,12 @@
 import bcrypt from "bcrypt";
 import { db } from "../../db/connection";
 import { DEAL_STAGES } from "../../constants/deal-stages.const";
+import {
+  extractAllowedImportTypes,
+  isLeadImportType,
+  withAllowedImportTypes,
+  type LeadImportType,
+} from "../../constants/lead-import.const";
 import { tenant_status } from "../../db/enums";
 import { BadRequestError, ConflictError, NotFoundError } from "../../errors";
 import entitlementsRepository, {
@@ -11,16 +17,14 @@ import planGatewayRefsRepository from "../../repositories/operator/plan-gateway-
 import plansRepository, { PlanRow } from "../../repositories/operator/plans.repository";
 import type { SubscriptionRow } from "../../repositories/operator/subscriptions.repository";
 import tenantsRepository, {
-  TenantRow,
-  TenantWithUsage,
+  type TenantRow,
 } from "../../repositories/operator/tenants.repository";
-import usersRepository, { TenantUserSummary } from "../../repositories/operator/users.repository";
+import usersRepository from "../../repositories/operator/users.repository";
 import tenantBillingProfileRepository, {
   UpsertTenantBillingProfileInput,
 } from "../../repositories/tenant-billing-profile.repository";
 import telephonyRepository from "../../repositories/telephony.repository";
 import telephonyNumbersRepository from "../../repositories/telephony-numbers.repository";
-import telephonyService from "../telephony.service";
 import config from "../../config";
 import { ulid } from "ulid";
 import { isE164, normalizePhone } from "../../utils/phone";
@@ -49,8 +53,13 @@ const slugify = (name: string): string =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+const withImportMeta = <T extends TenantRow>(tenant: T) => ({
+  ...tenant,
+  allowed_import_types: extractAllowedImportTypes(tenant.config),
+});
+
 class TenantsService {
-  async list(filters: { q?: string; status?: string }): Promise<TenantWithUsage[]> {
+  async list(filters: { q?: string; status?: string }) {
     let status: tenant_status | undefined;
     if (filters.status) {
       if (!isTenantStatus(filters.status)) {
@@ -60,15 +69,11 @@ class TenantsService {
       }
       status = filters.status;
     }
-    return tenantsRepository.listWithUsage({ q: filters.q, status });
+    const rows = await tenantsRepository.listWithUsage({ q: filters.q, status });
+    return rows.map((row) => withImportMeta(row));
   }
 
-  async detail(id: string): Promise<{
-    tenant: TenantRow;
-    entitlements: EntitlementRow[];
-    usage: { users: number; leads: number };
-    adminUsers: TenantUserSummary[];
-  }> {
+  async detail(id: string) {
     const tenant = await tenantsRepository.findById(id);
     if (!tenant) throw new NotFoundError("Tenant not found");
     const [entitlements, usage, adminUsers] = await Promise.all([
@@ -76,7 +81,7 @@ class TenantsService {
       tenantsRepository.usage(id),
       usersRepository.listAdminsByTenant(id),
     ]);
-    return { tenant, entitlements, usage, adminUsers };
+    return { tenant: withImportMeta(tenant), entitlements, usage, adminUsers };
   }
 
   async onboard(
@@ -88,18 +93,12 @@ class TenantsService {
       domain?: string;
       brand_color?: string;
       plan_key?: string;
+      allowed_import_types?: LeadImportType[];
       gateway?: string;
       billingMode?: string;
       admin?: { name?: string; email?: string; password?: string };
     }
-  ): Promise<{
-    tenant: TenantRow;
-    adminUser: TenantUserSummary;
-    entitlements: EntitlementRow[];
-    emailDispatched: boolean;
-    subscription: SubscriptionRow | null;
-    checkoutUrl: string | null;
-  }> {
+  ) {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     if (!name) throw new BadRequestError("Name is required");
 
@@ -162,6 +161,14 @@ class TenantsService {
           plan_key: plan.key,
           ...(typeof body.brand_color === "string" && body.brand_color
             ? { brand_color: body.brand_color }
+            : {}),
+          ...(Array.isArray(body.allowed_import_types)
+            ? {
+                config: withAllowedImportTypes(
+                  {},
+                  body.allowed_import_types.filter(isLeadImportType)
+                ),
+              }
             : {}),
         },
         trx
@@ -237,7 +244,7 @@ class TenantsService {
 
     return {
       ...result,
-      tenant,
+      tenant: withImportMeta(tenant),
       emailDispatched: emailService.isConfigured(),
       subscription,
       checkoutUrl,
@@ -317,12 +324,23 @@ class TenantsService {
   async update(
     actor: AuditActor,
     id: string,
-    body: { name?: string; brand_color?: string; status?: string; plan_key?: string }
-  ): Promise<TenantRow> {
+    body: {
+      name?: string;
+      brand_color?: string;
+      status?: string;
+      plan_key?: string;
+      allowed_import_types?: unknown;
+    }
+  ) {
     const existing = await tenantsRepository.findById(id);
     if (!existing) throw new NotFoundError("Tenant not found");
 
-    const patch: { name?: string; brand_color?: string; status?: tenant_status } = {};
+    const patch: {
+      name?: string;
+      brand_color?: string;
+      status?: tenant_status;
+      config?: Record<string, unknown>;
+    } = {};
     if (body.name !== undefined) {
       const name = typeof body.name === "string" ? body.name.trim() : "";
       if (!name) throw new BadRequestError("Name cannot be empty");
@@ -341,6 +359,16 @@ class TenantsService {
         );
       }
       patch.status = body.status;
+    }
+    if (body.allowed_import_types !== undefined) {
+      if (!Array.isArray(body.allowed_import_types)) {
+        throw new BadRequestError("allowed_import_types must be an array");
+      }
+      const cleaned = body.allowed_import_types.filter(isLeadImportType);
+      if (cleaned.length !== body.allowed_import_types.length) {
+        throw new BadRequestError("Invalid entry in allowed_import_types");
+      }
+      patch.config = withAllowedImportTypes(existing.config, cleaned);
     }
 
     let newPlan: PlanRow | undefined;
@@ -374,9 +402,15 @@ class TenantsService {
       tenantId: updated.id,
       resourceId: updated.id,
       summary: `${actor.email} updated tenant ${updated.name}`,
-      metadata: { ...patch, ...(newPlan ? { plan_key: newPlan.key } : {}) },
+      metadata: {
+        ...patch,
+        ...(body.allowed_import_types !== undefined
+          ? { allowed_import_types: extractAllowedImportTypes(updated.config) }
+          : {}),
+        ...(newPlan ? { plan_key: newPlan.key } : {}),
+      },
     });
-    return updated;
+    return withImportMeta(updated);
   }
 
   async overrideEntitlement(
@@ -561,18 +595,6 @@ class TenantsService {
     });
 
     return { ok: true };
-  }
-
-  async listTenantCalls(tenantId: string) {
-    const tenant = await tenantsRepository.findById(tenantId);
-    if (!tenant) throw new NotFoundError("Tenant not found");
-    return telephonyRepository.listCalls(tenantId);
-  }
-
-  async getTenantCallRecording(tenantId: string, callId: string) {
-    const tenant = await tenantsRepository.findById(tenantId);
-    if (!tenant) throw new NotFoundError("Tenant not found");
-    return telephonyService.recordingUrl(tenantId, callId);
   }
 }
 

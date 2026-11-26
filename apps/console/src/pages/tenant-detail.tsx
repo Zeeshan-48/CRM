@@ -19,8 +19,8 @@ import { StatCard } from "@/components/layout/StatCard";
 import { StatusBadge } from "@/components/layout/StatusBadge";
 import { SubscriptionCard } from "@/components/tenants/SubscriptionCard";
 import { TenantBillingProfileCard } from "@/components/tenants/TenantBillingProfileCard";
+import { LeadImportTypesCard } from "@/components/tenants/LeadImportTypesCard";
 import { TenantTelephonyCard } from "@/components/tenants/TenantTelephonyCard";
-import { TenantCallRecordingsCard } from "@/components/tenants/TenantCallRecordingsCard";
 import { TransactionsCard } from "@/components/tenants/TransactionsCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -397,11 +397,6 @@ export default function TenantDetailPage() {
         <TenantTelephonyCard tenantId={id} tenantName={tenant.name} />
       </section>
 
-      {/* Telephony Call Logs & Recordings Audit */}
-      <section className="reveal" style={{ animationDelay: "115ms" }}>
-        <TenantCallRecordingsCard tenantId={id} tenantName={tenant.name} />
-      </section>
-
       {/* Admin users */}
       <section className="reveal" style={{ animationDelay: "120ms" }}>
         <Card>
@@ -450,6 +445,15 @@ export default function TenantDetailPage() {
       {/* Billing transactions */}
       <section className="reveal" style={{ animationDelay: "160ms" }}>
         <TransactionsCard tenantId={id} />
+      </section>
+
+      {/* Allowed Lead Import Formats */}
+      <section className="reveal" style={{ animationDelay: "170ms" }}>
+        <LeadImportTypesCard
+          tenantId={id}
+          allowedTypes={tenant.allowed_import_types ?? []}
+          canWrite={canWrite}
+        />
       </section>
 
       {/* Entitlements */}

@@ -1,4 +1,12 @@
 import { ulid } from "ulid";
+import {
+  CSV_IMPORT_TAG,
+  getLeadAccountCandidate,
+  isLeadImportType,
+  normalizeExtraFieldsForType,
+  type LeadImportAssignmentSpec,
+  type LeadImportType,
+} from "../constants/lead-import.const";
 import { LIMIT_CODES } from "../constants/modules.const";
 import { db } from "../db/connection";
 import type { lead_status } from "../db/enums";
@@ -11,7 +19,7 @@ import leadsRepository, {
   LeadsListParams,
 } from "../repositories/leads.repository";
 import logger from "../utils/logger";
-import { normalizePhone, normalizePhoneForStore } from "../utils/phone";
+import { normalizePhoneForStore } from "../utils/phone";
 import {
   assertCanBulk,
   assertCanManageRecord,
@@ -23,13 +31,16 @@ import { aiProvider } from "./ai/provider";
 import engagementService from "./engagement.service";
 import engineService from "./engine.service";
 import entitlementsService from "./entitlements.service";
+import {
+  notifyAssignedImportOwners,
+  prepareBulkImportChunk,
+  validateImportAccess,
+  validateImportAssignment,
+} from "./lead-import-batch.service";
 import scoringService from "./scoring.service";
 import storageService from "./storage.service";
 
-// Auto-applied to every CSV-imported lead so a whole import is findable via the
-// Tag filter, WITHOUT overwriting each lead's real `source` (its marketing
-// channel: Website, Instagram, Competitor List, …).
-export const CSV_IMPORT_TAG = "CSV Import";
+export { CSV_IMPORT_TAG };
 
 export const ASSIGNMENT_STRATEGIES = [
   "ROUND_ROBIN",
@@ -145,6 +156,8 @@ class LeadsService {
       socials?: unknown;
       budget?: boolean;
       owner_id?: string | null;
+      import_type?: string | null;
+      extra_fields?: unknown;
     }
   ) {
     if (!body.name && !body.email && !body.phone) {
@@ -192,6 +205,11 @@ class LeadsService {
       socials: parseSocials(body.socials) ?? {},
       notes: body.notes,
       budget: !!body.budget,
+      import_type: isLeadImportType(body.import_type) ? body.import_type : null,
+      extra_fields:
+        body.extra_fields && typeof body.extra_fields === "object"
+          ? normalizeExtraFieldsForType(body.import_type, body.extra_fields)
+          : null,
     });
 
     const score = await scoringService.recompute(tenantId, lead.id);
@@ -216,12 +234,26 @@ class LeadsService {
   async bulkImport(
     tenantId: string,
     actorId: string,
+    actorRole: string,
     rows: unknown,
-    options?: { async?: boolean }
+    options?: {
+      async?: boolean;
+      importType?: LeadImportType;
+      assignment?: Partial<LeadImportAssignmentSpec>;
+      skipDuplicates?: boolean;
+    }
   ) {
     if (!Array.isArray(rows) || rows.length === 0) throw new BadRequestError("rows[] required");
 
-    // Offload large imports (>50 rows) or explicitly requested async imports to BullMQ worker
+    const { importType } = await validateImportAccess(tenantId, options?.importType);
+    const assignment = await validateImportAssignment(
+      tenantId,
+      actorId,
+      actorRole,
+      options?.assignment
+    );
+    const skipDuplicates = options?.skipDuplicates !== false;
+
     const shouldRunAsync = options?.async ?? rows.length > 50;
     if (shouldRunAsync) {
       const jobId = ulid();
@@ -229,11 +261,15 @@ class LeadsService {
         jobId,
         tenantId,
         actorId,
+        importType,
+        assignment,
+        skipDuplicates,
         rows: rows as Record<string, unknown>[],
       });
       return {
         async: true,
         jobId,
+        importType,
         message: "Lead import queued in background worker",
         total: rows.length,
         imported: 0,
@@ -250,108 +286,73 @@ class LeadsService {
       "leads"
     );
 
-    // One batch lookup of existing identifiers instead of a query per row, so a
-    // large file (hundreds of rows) stays fast and never trips the HTTP timeout.
     const existing = await leadsRepository.existingIdentifiers(tenantId);
     const seenEmails = new Set<string>();
     const seenPhones = new Set<string>();
 
-    let skipped = 0;
-    const toInsert: BulkCreateLeadData[] = [];
-    const now = new Date();
-    for (const raw of rows) {
-      const b = (raw ?? {}) as Record<string, unknown>;
-      const email = typeof b.email === "string" ? b.email.trim() : "";
-      const phone = typeof b.phone === "string" ? normalizePhone(b.phone) : "";
-      const emailKey = email.toLowerCase();
+    const prepared = prepareBulkImportChunk({
+      tenantId,
+      importType,
+      rows: rows as Record<string, unknown>[],
+      startRowNumber: 1,
+      existing,
+      seenEmails,
+      seenPhones,
+      skipDuplicates,
+      assignment,
+      startAssignIndex: 0,
+      csvImportTag: CSV_IMPORT_TAG,
+    });
 
-      // Skip rows whose email/phone already exists as a lead (in the DB) or was
-      // already seen earlier in this same file.
-      const dupInFile =
-        (!!emailKey && seenEmails.has(emailKey)) || (!!phone && seenPhones.has(phone));
-      const dupInDb =
-        (!!emailKey && existing.emails.has(emailKey)) || (!!phone && existing.phones.has(phone));
-      if (dupInFile || dupInDb) {
-        skipped++;
-        continue;
-      }
-      if (emailKey) seenEmails.add(emailKey);
-      if (phone) seenPhones.add(phone);
-
-      const source = typeof b.source === "string" && b.source ? b.source : "CSV Upload";
-      const tags = parseStringArray(b.tags);
-      const notes = typeof b.notes === "string" ? b.notes : "";
-      // Score inline, new leads have no activities/messages, so no DB reads and
-      // no per-row UPDATE. The score ships inside the bulk insert. Score off the
-      // lead's own tags, BEFORE stamping the system marker below.
-      const score = scoreLead(
-        { id: "", source, tags, notes, budget: false, last_activity_at: now, created_at: now },
-        [],
-        []
-      );
-      // Stamp the batch marker so the import is filterable by tag regardless of
-      // each row's own source (Website/Instagram/etc.). Added after scoring so it
-      // never affects the lead's grade. Case-insensitive dedupe so re-imports
-      // don't stack duplicates.
-      if (!tags.some((t) => t.toLowerCase() === CSV_IMPORT_TAG.toLowerCase())) {
-        tags.push(CSV_IMPORT_TAG);
-      }
-      toInsert.push({
-        tenant_id: tenantId,
-        name: typeof b.name === "string" && b.name ? b.name : "Unknown",
-        email,
-        phone,
-        city: typeof b.city === "string" ? b.city : "",
-        country: typeof b.country === "string" ? b.country : "India",
-        source,
-        tags,
-        notes,
-        budget: false,
-        score_total: score.total,
-        score_grade: score.grade,
-        score_breakdown: score,
-      });
-    }
-
-    // Insert the whole file in a handful of chunked multi-row INSERTs. This is
-    // the part we must guarantee, so it is awaited before responding.
+    const toInsert: BulkCreateLeadData[] = prepared.toInsert;
     const inserted = await leadsRepository.bulkCreate(toInsert);
+    const preserveOwner = assignment.mode !== "default";
 
-    // Per-lead automation (lead.created workflows + auto-assignment) runs in the
-    // background AFTER the rows are safely saved. For a large import this work
-    // can take a while and may fan out to emails/notifications, so it must never
-    // block or fail the import, the data above is already committed.
-    void this.runImportAutomation(tenantId, actorId, inserted);
+    void this.runImportAutomation(tenantId, actorId, inserted, preserveOwner);
+
+    const ownerCounts = new Map<string, number>();
+    for (const row of inserted) {
+      if (row.owner_id) {
+        ownerCounts.set(row.owner_id, (ownerCounts.get(row.owner_id) ?? 0) + 1);
+      }
+    }
+    void notifyAssignedImportOwners(tenantId, actorId, importType, ownerCounts);
 
     engineService.audit(tenantId, actorId, "lead.bulk_import", "lead", undefined, {
       count: inserted.length,
-      skipped,
+      skipped: prepared.skipped,
+      importType,
+      assignmentMode: assignment.mode,
+      ownerIds: assignment.ownerIds ?? [],
     });
-    return { imported: inserted.length, skipped };
+    return {
+      imported: inserted.length,
+      skipped: prepared.skipped,
+      skippedRows: prepared.skippedRows,
+      importType,
+    };
   }
 
   async getImportProgress(jobId: string) {
     return getLeadImportProgress(jobId);
   }
 
-  // Best-effort background automation for freshly imported leads. Gated on cheap
-  // upfront checks (skips entirely when no lead.created workflow and no
-  // auto-assign strategy). Never throws, one bad lead is logged and skipped so
-  // the rest still run.
   private async runImportAutomation(
     tenantId: string,
     actorId: string,
-    leads: LeadRow[]
+    leads: LeadRow[],
+    preserveOwner = false
   ): Promise<void> {
     try {
       const hasFlows = await this.hasLeadCreatedWorkflow(tenantId);
       const strategy = await this.defaultAssignmentStrategy(tenantId);
-      if (!hasFlows && strategy === "MANUAL") return;
+      if (!hasFlows && (preserveOwner || strategy === "MANUAL")) return;
       for (const lead of leads) {
         try {
-          if (hasFlows) await engineService.emit(tenantId, actorId, "lead.created", { lead });
-          if (strategy !== "MANUAL") {
-            // Re-read only when a workflow could have changed the row first.
+          if (hasFlows) {
+            await engineService.emit(tenantId, actorId, "lead.created", { lead, preserveOwner });
+          }
+          if (!preserveOwner && strategy !== "MANUAL") {
             const current = hasFlows
               ? (await leadsRepository.findById(lead.id, tenantId)) ?? lead
               : lead;
@@ -397,6 +398,8 @@ class LeadsService {
       notes: string;
       budget: boolean;
       owner_id: string | null;
+      import_type: string | null;
+      extra_fields: unknown;
     }>
   ) {
     const existing = await leadsRepository.findById(leadId, tenantId);
@@ -433,12 +436,9 @@ class LeadsService {
       }
     }
 
-    // Pull socials out of the spread: it arrives as free-form `unknown` and must
-    // be parsed to a clean { network: url } record before it reaches the repo.
-    const { socials, ...rest } = body;
-    // A disqualified lead is always unassigned, clearing the owner here wins over
-    // any owner_id in the body. Applies whether this update sets DISQUALIFIED or
-    // the lead is already disqualified and other fields are being edited.
+    // Pull socials and extra_fields out of the spread so they are sanitized cleanly.
+    const { socials, extra_fields, import_type, ...rest } = body;
+    const effectiveType = import_type !== undefined ? import_type : existing.import_type;
     const nextStatus = existing.converted_contact_id
       ? "CONVERTED"
       : body.status !== undefined
@@ -450,6 +450,12 @@ class LeadsService {
       status: nextStatus,
       ...(body.phone !== undefined ? { phone: normalizePhoneForStore(body.phone) } : {}),
       ...(socials !== undefined ? { socials: parseSocials(socials) ?? {} } : {}),
+      ...(import_type !== undefined
+        ? { import_type: isLeadImportType(import_type) ? import_type : null }
+        : {}),
+      ...(extra_fields !== undefined
+        ? { extra_fields: normalizeExtraFieldsForType(effectiveType, extra_fields) }
+        : {}),
       ...(forceUnassign ? { owner_id: null } : {}),
       last_activity_at: new Date(),
     });
@@ -891,15 +897,19 @@ class LeadsService {
     const result = await db.transaction().execute(async (trx) => {
       const now = new Date();
 
-      // Resolve or create account if accountId or accountName is specified
+      // Resolve or create account if accountId or accountName (or imported Company/Business name) is available
       let accountId = body.accountId;
-      if (!accountId && body.accountName && body.accountName.trim()) {
-        const trimmed = body.accountName.trim();
+      const targetAccountName = body.accountName?.trim() || getLeadAccountCandidate(lead) || "";
+      if (!accountId && targetAccountName) {
+        const extra =
+          lead.extra_fields && typeof lead.extra_fields === "object" && !Array.isArray(lead.extra_fields)
+            ? (lead.extra_fields as Record<string, unknown>)
+            : {};
         const existingAcc = await trx
           .selectFrom("accounts")
           .select("id")
           .where("tenant_id", "=", tenantId)
-          .where((eb) => eb(eb.fn("lower", ["name"]), "=", trimmed.toLowerCase()))
+          .where((eb) => eb(eb.fn("lower", ["name"]), "=", targetAccountName.toLowerCase()))
           .executeTakeFirst();
         if (existingAcc) {
           accountId = existingAcc.id;
@@ -909,8 +919,10 @@ class LeadsService {
             .values({
               id: ulid(),
               tenant_id: tenantId,
-              name: trimmed,
+              name: targetAccountName,
               city: body.city || lead.city || null,
+              state: typeof extra.state === "string" && extra.state ? extra.state : null,
+              address: typeof extra.address === "string" && extra.address ? extra.address : null,
               created_at: now,
               updated_at: now,
             })

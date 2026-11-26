@@ -26,6 +26,7 @@ export const listLeads = async (req: Request, res: Response) => {
     q: req.query.q as string | undefined,
     source: req.query.source as string | undefined,
     tag: req.query.tag as string | undefined,
+    importType: req.query.importType as string | undefined,
     status: req.query.status as lead_status | undefined,
     owner: req.query.owner as string | undefined,
     grade: req.query.grade as lead_grade | undefined,
@@ -106,9 +107,14 @@ export const createLead = async (req: Request, res: Response) => {
 };
 
 export const bulkImport = async (req: Request, res: Response) => {
-  const { tenantId, actorId } = ctx(req);
+  const { tenantId, actorId, actorRole } = ctx(req);
   const asyncRequested = req.query.async === "true" || (Array.isArray(req.body?.rows) && req.body.rows.length > 50);
-  const result = await leadsService.bulkImport(tenantId, actorId, req.body?.rows, { async: asyncRequested });
+  const result = await leadsService.bulkImport(tenantId, actorId, actorRole, req.body?.rows, {
+    async: asyncRequested,
+    importType: req.body?.importType,
+    assignment: req.body?.assignment,
+    skipDuplicates: req.body?.skipDuplicates,
+  });
   sendSuccessResponse({
     res,
     data: result,

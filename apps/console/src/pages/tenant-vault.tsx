@@ -3,7 +3,7 @@ import {
   Archive,
   Building2,
   CheckCircle2,
-  Download,
+  Eye,
   FileSpreadsheet,
   FileText,
   Headphones,
@@ -25,6 +25,8 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { StatCard } from "@/components/layout/StatCard";
+import { Mp3DownloadButton } from "@/components/tenants/Mp3DownloadButton";
+import { RoleDetailsDialog, type VaultRoleRecord } from "@/components/vault/RoleDetailsDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -73,6 +75,56 @@ function formatDuration(seconds?: number | null) {
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
+function describeVaultCallStatus(status?: string | null): {
+  label: string;
+  variant: "secondary" | "destructive" | "outline";
+  className?: string;
+} {
+  const s = (status || "queued").toLowerCase();
+  if (s === "completed") {
+    return {
+      label: "Completed",
+      variant: "secondary",
+      className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+    };
+  }
+  if (s === "failed") {
+    return { label: "Failed", variant: "destructive" };
+  }
+  if (s === "no-answer") {
+    return {
+      label: "No Answer",
+      variant: "outline",
+      className: "border-amber-400/50 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+    };
+  }
+  if (s === "busy") {
+    return {
+      label: "Busy",
+      variant: "outline",
+      className: "border-amber-400/50 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+    };
+  }
+  if (s === "canceled") {
+    return { label: "Canceled", variant: "secondary" };
+  }
+  if (s === "in-progress") {
+    return {
+      label: "In Progress",
+      variant: "outline",
+      className: "border-sky-400/50 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+    };
+  }
+  if (s === "ringing" || s === "initiated") {
+    return {
+      label: "Ringing",
+      variant: "outline",
+      className: "border-sky-400/50 bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+    };
+  }
+  return { label: "Queued", variant: "outline" };
+}
+
 type EntityKey =
   | "leads"
   | "contacts"
@@ -116,6 +168,10 @@ export default function TenantVaultPage() {
     entity: string;
     id: string;
     label: string;
+  } | null>(null);
+  const [roleDetail, setRoleDetail] = React.useState<{
+    role: VaultRoleRecord;
+    tenantName: string;
   } | null>(null);
 
   // Tenants list
@@ -548,11 +604,15 @@ export default function TenantVaultPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Tenant</TableHead>
+                    <TableHead className="whitespace-nowrap">Tenant</TableHead>
                     {renderEntityHeaders(entity)}
-                    <TableHead>{entity === "recordings" ? "Call Status" : "Lifecycle Status"}</TableHead>
-                    <TableHead>{entity === "recordings" ? "Call Time" : "Created"}</TableHead>
-                    <TableHead className="text-right">Vault Action</TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      {entity === "recordings" ? "Call Status" : "Lifecycle Status"}
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap">
+                      {entity === "recordings" ? "Call Time" : "Created"}
+                    </TableHead>
+                    <TableHead className="whitespace-nowrap text-right">Vault Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -564,11 +624,22 @@ export default function TenantVaultPage() {
                     return (
                       <TableRow
                         key={row.id}
-                        className={isDeleted ? "bg-rose-50/40 dark:bg-rose-950/20" : undefined}
+                        className={cn(
+                          isDeleted ? "bg-rose-50/40 dark:bg-rose-950/20" : undefined,
+                          entity === "roles" && "cursor-pointer hover:bg-muted/40"
+                        )}
+                        onClick={
+                          entity === "roles"
+                            ? () => setRoleDetail({ role: row as VaultRoleRecord, tenantName })
+                            : undefined
+                        }
                       >
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <div className="flex flex-col">
-                            <span className="font-semibold text-xs text-foreground">
+                            <span
+                              className="max-w-[180px] truncate font-semibold text-xs text-foreground"
+                              title={tenantName}
+                            >
                               {tenantName}
                             </span>
                             <span className="font-mono text-[10px] text-muted-foreground">
@@ -577,32 +648,34 @@ export default function TenantVaultPage() {
                           </div>
                         </TableCell>
 
-                        {renderEntityCells(entity, row)}
+                        {renderEntityCells(entity, row, {
+                          onInspectRole: (r) =>
+                            setRoleDetail({ role: r as VaultRoleRecord, tenantName }),
+                        })}
 
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           {entity === "recordings" ? (
-                            <div className="flex flex-col gap-0.5">
-                              <Badge
-                                variant={
-                                  row.call_status === "completed"
-                                    ? "secondary"
-                                    : row.call_status === "failed" || row.call_status === "no-answer"
-                                    ? "destructive"
-                                    : "outline"
-                                }
-                                className={cn(
-                                  "w-fit text-[11px] capitalize",
-                                  row.call_status === "completed" && "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                                )}
-                              >
-                                {row.call_status || "queued"}
-                              </Badge>
-                              {row.call_error && (
-                                <span className="text-[10px] text-destructive truncate max-w-[120px]" title={row.call_error}>
-                                  {row.call_error}
-                                </span>
-                              )}
-                            </div>
+                            (() => {
+                              const cs = describeVaultCallStatus(row.call_status);
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  <Badge
+                                    variant={cs.variant}
+                                    className={cn("w-fit text-[11px]", cs.className)}
+                                  >
+                                    {cs.label}
+                                  </Badge>
+                                  {row.call_error ? (
+                                    <span
+                                      className="max-w-[160px] truncate text-[10px] text-destructive"
+                                      title={row.call_error}
+                                    >
+                                      {row.call_error}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              );
+                            })()
                           ) : isDeleted ? (
                             <div className="flex flex-col gap-1">
                               <Badge variant="destructive" className="w-fit text-[11px]">
@@ -619,7 +692,7 @@ export default function TenantVaultPage() {
                             </div>
                           ) : (
                             <div className="flex items-center gap-1.5">
-                              <CheckCircle2 className="size-3.5 text-emerald-500" />
+                              <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
                               <Badge variant="secondary" className="text-[11px]">
                                 ACTIVE
                               </Badge>
@@ -627,7 +700,7 @@ export default function TenantVaultPage() {
                           )}
                         </TableCell>
 
-                        <TableCell className="text-xs text-muted-foreground">
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                           {entity === "recordings"
                             ? formatDateTime(row.created_at)
                             : row.builtin
@@ -635,7 +708,12 @@ export default function TenantVaultPage() {
                             : formatDate(row.created_at)}
                         </TableCell>
 
-                        <TableCell className="text-right">
+                        <TableCell
+                          className="whitespace-nowrap text-right"
+                          onClick={(e) => {
+                            if (entity === "roles") e.stopPropagation();
+                          }}
+                        >
                           {entity === "recordings" ? (
                             <Button
                               size="sm"
@@ -655,6 +733,19 @@ export default function TenantVaultPage() {
                             </Button>
                           ) : isDeleted ? (
                             <div className="flex items-center justify-end gap-1.5">
+                              {entity === "roles" ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                  onClick={() =>
+                                    setRoleDetail({ role: row as VaultRoleRecord, tenantName })
+                                  }
+                                >
+                                  <Eye className="size-3.5" />
+                                  View
+                                </Button>
+                              ) : null}
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -693,6 +784,23 @@ export default function TenantVaultPage() {
                                 <Trash2 className="size-3.5" />
                               </Button>
                             </div>
+                          ) : entity === "roles" ? (
+                            <div className="inline-flex items-center justify-end gap-2">
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {row.builtin ? "System Built-in" : "Tenant Managed"}
+                              </span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 gap-1 px-2 text-xs"
+                                onClick={() =>
+                                  setRoleDetail({ role: row as VaultRoleRecord, tenantName })
+                                }
+                              >
+                                <Eye className="size-3.5" />
+                                Details
+                              </Button>
+                            </div>
                           ) : row.builtin ? (
                             <span className="text-xs text-muted-foreground font-mono">
                               System Built-in
@@ -712,6 +820,14 @@ export default function TenantVaultPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Role Details Dialog (Members & Permissions) */}
+      <RoleDetailsDialog
+        open={Boolean(roleDetail)}
+        onOpenChange={(open) => !open && setRoleDetail(null)}
+        role={roleDetail?.role ?? null}
+        tenantName={roleDetail?.tenantName ?? ""}
+      />
 
       {/* Purge Confirmation Dialog */}
       <Dialog open={Boolean(purgeTarget)} onOpenChange={(open) => !open && setPurgeTarget(null)}>
@@ -813,11 +929,9 @@ function renderEntityHeaders(entity: EntityKey) {
     case "roles":
       return (
         <>
-          <TableHead>Role Key</TableHead>
-          <TableHead>Display Name</TableHead>
-          <TableHead>Role Type</TableHead>
-          <TableHead className="min-w-[240px]">Assigned Members (User & Email)</TableHead>
-          <TableHead>Permissions / Modules</TableHead>
+          <TableHead className="min-w-[200px]">Role</TableHead>
+          <TableHead className="min-w-[210px]">Assigned Members</TableHead>
+          <TableHead className="min-w-[240px]">Permissions / Modules</TableHead>
         </>
       );
     case "recordings":
@@ -833,7 +947,11 @@ function renderEntityHeaders(entity: EntityKey) {
   }
 }
 
-function renderEntityCells(entity: EntityKey, row: any) {
+function renderEntityCells(
+  entity: EntityKey,
+  row: any,
+  opts?: { onInspectRole?: (row: any) => void }
+) {
   switch (entity) {
     case "leads":
       return (
@@ -974,73 +1092,105 @@ function renderEntityCells(entity: EntityKey, row: any) {
       const perms = Array.isArray(row.permissions) ? row.permissions : [];
       const members = Array.isArray(row.members) ? row.members : [];
       const memberCount = row.member_count ?? members.length;
+      const firstMember = members[0];
+      const extraMembers = Math.max(0, memberCount - 1);
+      const previewPerms = perms.slice(0, 3);
+      const extraPerms = Math.max(0, perms.length - previewPerms.length);
+      const inspectRole = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        opts?.onInspectRole?.(row);
+      };
+
       return (
         <>
-          <TableCell>
-            <span className="font-mono text-xs font-semibold text-brand">{row.key}</span>
-          </TableCell>
-          <TableCell>
-            <div className="font-medium text-sm text-foreground">{row.name}</div>
-            {row.description && (
-              <div className="text-xs text-muted-foreground">{row.description}</div>
-            )}
-          </TableCell>
-          <TableCell>
-            <Badge
-              variant={row.builtin ? "secondary" : "outline"}
-              className="text-[11px]"
-            >
-              {row.builtin ? "Built-in System Role" : "Custom Admin Role"}
-            </Badge>
-          </TableCell>
-          <TableCell>
-            {members.length > 0 ? (
-              <div className="space-y-1.5 py-1 min-w-[220px]">
-                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                  {memberCount} {memberCount === 1 ? "member" : "members"}
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  {members.map((u: any) => (
-                    <div
-                      key={u.id || u.email}
-                      className="rounded-md border border-border/60 bg-muted/40 px-2.5 py-1.5 shadow-xs"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-xs text-foreground">{u.name}</span>
-                        {u.status && u.status !== "ACTIVE" && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0">
-                            {u.status}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-[11px] font-mono text-muted-foreground break-all">
-                        {u.email}
-                      </div>
-                      {u.phone && (
-                        <div className="text-[10px] text-muted-foreground/80">
-                          {u.phone}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+          {/* Merged compact Role Identity column */}
+          <TableCell className="align-middle">
+            <div className="flex flex-col gap-0.5 max-w-[240px]">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={inspectRole}
+                  className="truncate text-left text-sm font-semibold text-foreground hover:text-brand hover:underline"
+                  title={row.description ? `${row.name} — ${row.description}` : row.name}
+                >
+                  {row.name}
+                </button>
+                <Badge
+                  variant={row.builtin ? "secondary" : "outline"}
+                  className="shrink-0 whitespace-nowrap px-1.5 py-0 text-[10px]"
+                >
+                  {row.builtin ? "Built-in" : "Custom"}
+                </Badge>
               </div>
+              <span className="truncate font-mono text-[11px] text-brand">{row.key}</span>
+            </div>
+          </TableCell>
+
+          {/* Compact fixed-height Assigned Members column */}
+          <TableCell className="align-middle">
+            {members.length > 0 && firstMember ? (
+              <div className="flex items-center justify-between gap-2 max-w-[260px]">
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-medium text-foreground">
+                    {firstMember.name || "Unnamed user"}
+                  </p>
+                  <p className="truncate font-mono text-[11px] text-muted-foreground">
+                    {firstMember.email}
+                  </p>
+                </div>
+                {extraMembers > 0 ? (
+                  <button
+                    type="button"
+                    onClick={inspectRole}
+                    className="shrink-0 whitespace-nowrap rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand transition-colors hover:bg-brand/15"
+                  >
+                    +{extraMembers} more
+                  </button>
+                ) : null}
+              </div>
+            ) : memberCount > 0 ? (
+              <button
+                type="button"
+                onClick={inspectRole}
+                className="whitespace-nowrap rounded-full border border-brand/30 bg-brand/10 px-2.5 py-0.5 text-[11px] font-medium text-brand hover:bg-brand/15"
+              >
+                {memberCount} {memberCount === 1 ? "member" : "members"}
+              </button>
             ) : (
-              <span className="text-xs text-muted-foreground italic">0 members</span>
+              <span className="whitespace-nowrap text-xs text-muted-foreground italic">
+                0 members
+              </span>
             )}
           </TableCell>
-          <TableCell>
-            <div className="flex flex-wrap gap-1 max-w-sm">
+
+          {/* Horizontal fixed-height Permissions / Modules column */}
+          <TableCell className="align-middle">
+            <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
               {perms.includes("*") ? (
-                <Badge variant="brand" className="text-[10px] px-1.5 py-0 font-medium">
+                <Badge variant="brand" className="px-2 py-0.5 text-[10px] font-medium">
                   All Modules (*)
                 </Badge>
               ) : perms.length > 0 ? (
-                perms.map((p: string) => (
-                  <Badge key={p} variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
-                    {p}
-                  </Badge>
-                ))
+                <>
+                  {previewPerms.map((p: string) => (
+                    <Badge
+                      key={p}
+                      variant="secondary"
+                      className="px-1.5 py-0.5 font-mono text-[10px]"
+                    >
+                      {p}
+                    </Badge>
+                  ))}
+                  {extraPerms > 0 ? (
+                    <button
+                      type="button"
+                      onClick={inspectRole}
+                      className="shrink-0 whitespace-nowrap rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand transition-colors hover:bg-brand/15"
+                    >
+                      +{extraPerms} more
+                    </button>
+                  ) : null}
+                </>
               ) : (
                 <span className="text-xs text-muted-foreground italic">No modules</span>
               )}
@@ -1126,17 +1276,7 @@ function renderEntityCells(entity: EntityKey, row: any) {
                   src={row.audio_url}
                   className="h-8 w-52 sm:w-60 accent-brand rounded"
                 />
-                <a
-                  href={row.audio_url}
-                  download={`recording-${row.id}.mp3`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 border rounded px-2.5 py-1.5 transition-colors shrink-0"
-                  title="Download MP3 Recording"
-                >
-                  <Download className="size-3" />
-                  MP3
-                </a>
+                <Mp3DownloadButton url={row.audio_url} filename={`recording-${row.id}.mp3`} />
               </div>
             ) : (
               <span className="text-xs text-muted-foreground italic flex items-center gap-1">

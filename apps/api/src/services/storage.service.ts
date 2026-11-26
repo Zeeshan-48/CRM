@@ -20,6 +20,16 @@ export interface StoredObject {
 
 const LOCAL_BUCKET = "local";
 
+/** Derives the live public base URL from an incoming Express request so signed links match the caller's reachable host even when local tunnels rotate. */
+export function getRequestBaseUrl(
+  req: Pick<Request, "get" | "protocol" | "secure">
+): string | undefined {
+  const host = req.get("x-forwarded-host") || req.get("host");
+  if (!host) return undefined;
+  const proto = req.get("x-forwarded-proto") || (req.secure ? "https" : req.protocol || "http");
+  return `${proto}://${host}`;
+}
+
 // HMAC key for local download links, derived from the JWT secret so no extra
 // setting is needed and a link cannot be forged without the server's secret.
 const linkKey = crypto.createHash("sha256").update(`local-files:${config.JWT_SECRET}`).digest();
@@ -87,14 +97,19 @@ class StorageService {
 
   // Returns a browser-usable, expiring URL: a presigned S3 URL, or a signed
   // link to the API's /local-files route for the local driver.
-  async getDownloadUrl(key: string, expiresInSec = 3600): Promise<string> {
+  async getDownloadUrl(
+    key: string,
+    expiresInSec = 3600,
+    publicBaseUrl?: string
+  ): Promise<string> {
     if (this.s3) {
       const command = new GetObjectCommand({ Bucket: this.bucket, Key: key });
       return getSignedUrl(this.s3, command, { expiresIn: expiresInSec });
     }
     const expires = Math.floor(Date.now() / 1000) + expiresInSec;
     const encoded = key.split("/").map(encodeURIComponent).join("/");
-    return `${config.APP_PUBLIC_URL}/local-files/${encoded}?expires=${expires}&sig=${signLocal(key, expires)}`;
+    const base = (publicBaseUrl || config.APP_PUBLIC_URL).replace(/\/+$/, "");
+    return `${base}/local-files/${encoded}?expires=${expires}&sig=${signLocal(key, expires)}`;
   }
 
   async delete(key: string): Promise<void> {
@@ -138,6 +153,11 @@ export async function serveLocalFile(req: Request, res: Response): Promise<void>
     return;
   }
   res.setHeader("Cache-Control", "private, max-age=300");
+  if (req.query.download === "1") {
+    const rawName = String(req.query.filename || path.basename(file) || "recording.mp3");
+    const safeName = rawName.replace(/[^a-zA-Z0-9._-]/g, "_") || "recording.mp3";
+    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+  }
   res.sendFile(file, { dotfiles: "allow" }, (err) => {
     if (err && !res.headersSent) res.status(404).end();
   });

@@ -1,3 +1,4 @@
+import { extractAllowedImportTypes } from "../constants/lead-import.const";
 import { NotFoundError } from "../errors";
 import tenantsRepository from "../repositories/tenants.repository";
 import engineService from "./engine.service";
@@ -19,7 +20,15 @@ class TenantsService {
         .filter((e) => e.enabled && e.code.startsWith("limit."))
         .map((e) => [e.code.slice("limit.".length), e.limit_value])
     );
-    return { tenant, usage, modules, limits };
+    return {
+      tenant: {
+        ...tenant,
+        allowed_import_types: extractAllowedImportTypes(tenant.config),
+      },
+      usage,
+      modules,
+      limits,
+    };
   }
 
   async update(

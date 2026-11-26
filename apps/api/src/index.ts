@@ -19,7 +19,8 @@ const MAX_RESTARTS_PER_WINDOW = 10;
 const SHUTDOWN_TIMEOUT_MS = 30_000;
 
 const startMaster = (): void => {
-  const numWorkers = config.isProduction ? os.cpus().length : 1;
+  const maxWorkers = Number(process.env.WEB_CONCURRENCY || os.cpus().length);
+  const numWorkers = config.isProduction ? Math.max(1, Math.min(maxWorkers, 16)) : 1;
   logger.info(`Master ${process.pid}: forking ${numWorkers} worker(s)`);
 
   let shuttingDown = false;

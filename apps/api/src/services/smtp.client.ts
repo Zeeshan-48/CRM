@@ -31,6 +31,12 @@ class SmtpClient {
         host: config.SMTP_HOST,
         port: config.SMTP_PORT,
         secure: config.SMTP_SECURE,
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 20_000,
         auth: {
           user: config.SMTP_USER,
           pass: config.SMTP_PASS.replace(/\s+/g, ""),

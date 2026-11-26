@@ -1,3 +1,4 @@
+import type { LeadImportType } from "@/types";
 import { useAuthStore } from "@/stores/auth-store";
 import { apiDelete, apiGet, apiPost, apiPut } from "./client";
 import type { Activity } from "./activities";
@@ -89,6 +90,8 @@ export interface Lead {
   converted_deal_id: string | null;
   /** Rolled-up platform snapshot (from external-platform activity sync). */
   custom_fields: PlatformSnapshot | null;
+  import_type?: LeadImportType | null;
+  extra_fields?: Record<string, string> | null;
   last_activity_at: string | null;
   created_at: string;
   updated_at: string;
@@ -144,6 +147,7 @@ export interface LeadsListParams {
   source?: string;
   /** Exact tag the lead must carry (e.g. "CSV Import"). */
   tag?: string;
+  importType?: string;
   status?: string;
   owner?: string;
   grade?: string;
@@ -195,35 +199,53 @@ export interface CreateLeadBody {
   budget?: boolean;
   tags?: string[];
   owner_id?: string | null;
+  import_type?: LeadImportType | null;
+  extra_fields?: Record<string, string>;
 }
 
-export interface BulkLeadRow {
+export type BulkLeadRow = Record<string, unknown> & {
   name?: string;
   email?: string;
   phone?: string;
+  mobile?: string;
   city?: string;
   source?: string;
   country?: string;
   tags?: string[];
   notes?: string;
+  company_name?: string;
+  cin?: string;
+  director_name?: string;
+  state?: string;
+  activity?: string;
+  state_city?: string;
+  exam?: string;
+  percentage?: string;
+  business_name?: string;
+  owner_name?: string;
+  address?: string;
+};
+
+export interface SkippedImportRow {
+  rowNumber: number;
+  name: string;
+  email: string;
+  phone: string;
+  reason: string;
 }
 
-export const listLeads = (params?: LeadsListParams) =>
-  apiGet<LeadsListResponse>("/leads", { params });
+export type LeadImportAssignMode = "default" | "unassigned" | "single" | "round_robin";
 
-export const getLeadSources = () => apiGet<string[]>("/leads/sources");
-
-/** Distinct tags in use across the tenant's leads (for the Tag filter). */
-export const getLeadTags = () => apiGet<string[]>("/leads/tags");
-
-export const getAssignmentStrategies = () =>
-  apiGet<string[]>("/leads/assignment-strategies");
-
-export const createLead = (body: CreateLeadBody) => apiPost<Lead>("/leads", body);
+export interface LeadImportAssignmentPayload {
+  mode: LeadImportAssignMode;
+  ownerIds?: string[];
+}
 
 export interface BulkImportResponse {
   imported: number;
   skipped: number;
+  skippedRows?: SkippedImportRow[];
+  importType?: LeadImportType;
   async?: boolean;
   jobId?: string;
   total?: number;
@@ -231,21 +253,36 @@ export interface BulkImportResponse {
 
 export interface LeadImportJobProgress {
   jobId: string;
+  importType?: LeadImportType;
   status: "queued" | "processing" | "completed" | "failed";
   total: number;
   processed: number;
   imported: number;
   skipped: number;
+  skippedRows?: SkippedImportRow[];
   percent: number;
   error?: string;
 }
 
-export const bulkImportLeads = (rows: BulkLeadRow[]) =>
-  apiPost<BulkImportResponse>(
-    "/leads/bulk",
-    { rows },
-    { timeout: 300_000 }
-  );
+export const bulkImportLeads = (payload: {
+  rows: BulkLeadRow[];
+  importType?: LeadImportType;
+  assignment?: LeadImportAssignmentPayload;
+  skipDuplicates?: boolean;
+}) =>
+  apiPost<BulkImportResponse>("/leads/bulk", payload, { timeout: 300_000 });
+
+export const listLeads = (params?: LeadsListParams) =>
+  apiGet<LeadsListResponse>("/leads", { params });
+
+export const getLeadSources = () => apiGet<string[]>("/leads/sources");
+
+export const getLeadTags = () => apiGet<string[]>("/leads/tags");
+
+export const getAssignmentStrategies = () =>
+  apiGet<string[]>("/leads/assignment-strategies");
+
+export const createLead = (body: CreateLeadBody) => apiPost<Lead>("/leads", body);
 
 export const getLeadImportJobStatus = (jobId: string) =>
   apiGet<LeadImportJobProgress>(`/leads/import-jobs/${jobId}`);
@@ -274,6 +311,8 @@ export const updateLead = (
     notes: string;
     budget: boolean;
     owner_id: string | null;
+    import_type: LeadImportType | null;
+    extra_fields: Record<string, string>;
   }>
 ) => apiPut<Lead>(`/leads/${id}`, body);
 

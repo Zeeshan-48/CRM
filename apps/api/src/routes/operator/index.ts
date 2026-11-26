@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authenticateOperator } from "../../middlewares/operator-auth.middleware";
+import { operatorApiLimiter } from "../../middlewares/rate-limit.middleware";
 import { asyncHandler } from "../../utils/asynchandler";
 
 import auditRouter from "./audit.route";
@@ -18,7 +19,7 @@ rootRouter.use("/auth", authRouter);
 
 // ---- Authenticated operator console ----
 const A = (path: string, router: Router) => {
-  rootRouter.use(path, asyncHandler(authenticateOperator), router);
+  rootRouter.use(path, asyncHandler(authenticateOperator), operatorApiLimiter, router);
 };
 A("/operators", operatorsRouter);
 A("/plans", plansRouter);

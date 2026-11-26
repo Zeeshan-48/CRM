@@ -128,13 +128,31 @@ export const rateLimit = (options: RateLimitOptions): RequestHandler => {
 
 const MIN = 60;
 
-/** Broad per-IP backstop for the whole API surface (DoS / runaway client). */
+/** Broad per-IP backstop for the whole API surface (sized generously for shared office NATs). */
 export const globalApiLimiter = rateLimit({
   id: "global",
   windowSec: MIN,
-  max: 600,
+  max: 3000,
   key: byIp("global"),
   message: "Too many requests. Slow down and try again shortly.",
+});
+
+/** Per-user fairness guard for authenticated workspace API calls (isolates shared-IP office teams). */
+export const userApiLimiter = rateLimit({
+  id: "user-api",
+  windowSec: MIN,
+  max: 600,
+  key: byUser("user-api"),
+  message: "Too many API requests for your user session. Please slow down.",
+});
+
+/** Per-operator fairness guard for Super Admin console requests. */
+export const operatorApiLimiter = rateLimit({
+  id: "operator-api",
+  windowSec: MIN,
+  max: 600,
+  key: byOperator("operator-api"),
+  message: "Too many operator API requests. Please slow down.",
 });
 
 /** Login brute-force guard: per IP AND per email (chain both on the route). */

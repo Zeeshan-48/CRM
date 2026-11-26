@@ -1,6 +1,7 @@
 import { ulid } from "ulid";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDB, db } from "../../src/db/connection";
+import { sweepStaleCalls } from "../../src/jobs/calls-poll.job";
 import { api, auth, NW_ADMIN, NW_SALES, login } from "../helpers";
 
 let adminToken: string;
@@ -14,6 +15,7 @@ let savedConfig: Record<string, unknown> | null = null;
 const marker = `TelephonyTest-${Date.now()}`;
 const leadPhone = "+14155550100";
 const agentPhone = "+14155550111";
+const createdCallIds: string[] = [];
 
 beforeAll(async () => {
   adminToken = await login(NW_ADMIN.email, NW_ADMIN.password);
@@ -50,6 +52,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.deleteFrom("voice_calls").where("tenant_id", "=", tenantId).where("provider", "=", "twilio").execute();
+  if (createdCallIds.length > 0) {
+    await db.deleteFrom("voice_calls").where("id", "in", createdCallIds).execute();
+  }
   await db.deleteFrom("tenant_telephony").where("tenant_id", "=", tenantId).execute();
   if (savedConfig) {
     await db.insertInto("tenant_telephony").values(savedConfig as never).execute();
@@ -154,5 +159,151 @@ describe("click-to-call", () => {
     const res = await api.get("/api/v1/telephony/calls").set(auth(adminToken));
     expect(res.status).toBe(200);
     expect(res.body.data.some((c: { to_number: string }) => c.to_number === leadPhone)).toBe(true);
+  });
+});
+
+describe("call state sync & stale call reconciliation", () => {
+  it("transitions queued -> in-progress -> completed and rejects invalid or terminal downgrades", async () => {
+    const admin = await db
+      .selectFrom("users")
+      .select(["id"])
+      .where("tenant_id", "=", tenantId)
+      .where("email", "=", NW_ADMIN.email)
+      .executeTakeFirstOrThrow();
+
+    const callId = ulid();
+    createdCallIds.push(callId);
+    const now = new Date();
+    await db
+      .insertInto("voice_calls")
+      .values({
+        id: callId,
+        tenant_id: tenantId,
+        lead_id: leadId,
+        agent_user_id: admin.id,
+        provider: "plivo",
+        direction: "OUTBOUND",
+        call_status: "queued",
+        from_number: "+918065395632",
+        to_number: leadPhone,
+        duration_sec: 0,
+        created_at: now,
+        updated_at: now,
+      })
+      .execute();
+
+    // 1. Rejects unsupported status
+    const badRes = await api
+      .patch(`/api/v1/telephony/calls/${callId}/state`)
+      .set(auth(adminToken))
+      .send({ status: "bogus" });
+    expect(badRes.status).toBe(400);
+
+    // 2. Non-owner agent cannot update another user's active call
+    const forbiddenRes = await api
+      .patch(`/api/v1/telephony/calls/${callId}/state`)
+      .set(auth(salesToken))
+      .send({ status: "canceled" });
+    expect(forbiddenRes.status).toBe(403);
+
+    // 3. Moves queued -> in-progress
+    const liveRes = await api
+      .patch(`/api/v1/telephony/calls/${callId}/state`)
+      .set(auth(adminToken))
+      .send({ status: "in-progress" });
+    expect(liveRes.status).toBe(200);
+    expect(liveRes.body.data.call_status).toBe("in-progress");
+
+    // 4. Moves in-progress -> completed with duration
+    const doneRes = await api
+      .patch(`/api/v1/telephony/calls/${callId}/state`)
+      .set(auth(adminToken))
+      .send({ status: "completed", durationSec: 42 });
+    expect(doneRes.status).toBe(200);
+    expect(doneRes.body.data.call_status).toBe("completed");
+    expect(doneRes.body.data.duration_sec).toBe(42);
+
+    // 5. Never downgrades an already terminal completed call back to queued/failed
+    const downgradeRes = await api
+      .patch(`/api/v1/telephony/calls/${callId}/state`)
+      .set(auth(adminToken))
+      .send({ status: "failed", durationSec: 0 });
+    expect(downgradeRes.status).toBe(200);
+    expect(downgradeRes.body.data.call_status).toBe("completed");
+    expect(downgradeRes.body.data.duration_sec).toBe(42);
+  });
+
+  it("sweeps stale queued calls to failed and stuck recorded calls to completed", async () => {
+    const oldQueuedId = ulid();
+    const stuckWithAudioId = ulid();
+    const freshQueuedId = ulid();
+    createdCallIds.push(oldQueuedId, stuckWithAudioId, freshQueuedId);
+
+    const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+    const twoMinsAgo = new Date(Date.now() - 2 * 60 * 1000);
+
+    await db
+      .insertInto("voice_calls")
+      .values([
+        {
+          id: oldQueuedId,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          provider: "plivo",
+          direction: "OUTBOUND",
+          call_status: "queued",
+          from_number: "+918065395632",
+          to_number: leadPhone,
+          duration_sec: 0,
+          created_at: thirtyMinsAgo,
+          updated_at: thirtyMinsAgo,
+        },
+        {
+          id: stuckWithAudioId,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          provider: "plivo",
+          direction: "OUTBOUND",
+          call_status: "in-progress",
+          recording_url: "telephony/sample/rec.mp3",
+          from_number: "+918065395632",
+          to_number: leadPhone,
+          duration_sec: 0,
+          created_at: thirtyMinsAgo,
+          updated_at: thirtyMinsAgo,
+        },
+        {
+          id: freshQueuedId,
+          tenant_id: tenantId,
+          lead_id: leadId,
+          provider: "plivo",
+          direction: "OUTBOUND",
+          call_status: "queued",
+          from_number: "+918065395632",
+          to_number: leadPhone,
+          duration_sec: 0,
+          created_at: twoMinsAgo,
+          updated_at: twoMinsAgo,
+        },
+      ])
+      .execute();
+
+    await sweepStaleCalls();
+
+    const rows = await db
+      .selectFrom("voice_calls")
+      .select(["id", "call_status", "call_error", "completed_at"])
+      .where("id", "in", [oldQueuedId, stuckWithAudioId, freshQueuedId])
+      .execute();
+    const byId = new Map(rows.map((r) => [r.id, r]));
+
+    expect(byId.get(oldQueuedId)?.call_status).toBe("failed");
+    expect(byId.get(oldQueuedId)?.call_error).toContain("timeout");
+    expect(byId.get(oldQueuedId)?.completed_at).toBeTruthy();
+
+    expect(byId.get(stuckWithAudioId)?.call_status).toBe("completed");
+    expect(byId.get(stuckWithAudioId)?.completed_at).toBeTruthy();
+
+    expect(byId.get(freshQueuedId)?.call_status).toBe("queued");
   });
 });

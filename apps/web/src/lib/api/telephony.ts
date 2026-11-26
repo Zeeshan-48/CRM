@@ -1,7 +1,7 @@
 // Telephony click-to-call: Twilio (the platform default account or tenant BYO)
 // or Exotel (tenant BYO only). Mirrors the email-domains API shape.
 
-import { apiDelete, apiGet, apiPost, apiPut } from "./client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "./client";
 
 export type TelephonyStatus = "PENDING" | "ACTIVE" | "DISABLED";
 export type TelephonyProvider = "TWILIO" | "EXOTEL" | "PLIVO";
@@ -132,6 +132,11 @@ export const removeTelephony = () => apiDelete<{ ok: boolean }>("/telephony");
 
 export const placeCall = (input: PlaceCallInput) => apiPost<PhoneCall>("/telephony/call", input);
 export const listCalls = () => apiGet<PhoneCall[]>("/telephony/calls");
+
+export const updateCallState = (
+  callId: string,
+  input: { status: string; durationSec?: number; callError?: string }
+) => apiPatch<PhoneCall>(`/telephony/calls/${callId}/state`, input);
 
 /** Log a call the agent dialed from their personal SIM (no recording exists). */
 export const logManualCall = (input: LogManualCallInput) =>

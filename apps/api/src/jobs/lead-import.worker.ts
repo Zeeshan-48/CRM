@@ -1,5 +1,6 @@
 import { Worker } from "bullmq";
 import { ulid } from "ulid";
+import { CSV_IMPORT_TAG } from "../constants/lead-import.const";
 import { LIMIT_CODES } from "../constants/modules.const";
 import { db } from "../db/connection";
 import { createQueueConnection, isQueueEnabled } from "../queue/connection";
@@ -7,46 +8,46 @@ import {
   LEAD_IMPORT_QUEUE_NAME,
   type LeadImportJobData,
   type LeadImportProgress,
+  type SkippedImportRow,
   setLeadImportProgress,
   closeLeadImportQueue,
   registerLeadImportProcessor,
 } from "../queue/lead-import.queue";
 import leadsRepository, { BulkCreateLeadData, LeadRow } from "../repositories/leads.repository";
-import { scoreLead } from "../services/ai/heuristics";
 import engineService from "../services/engine.service";
 import entitlementsService from "../services/entitlements.service";
+import {
+  notifyAssignedImportOwners,
+  prepareBulkImportChunk,
+} from "../services/lead-import-batch.service";
 import leadsService from "../services/leads.service";
 import logger from "../utils/logger";
-import { normalizePhone } from "../utils/phone";
 
 let worker: Worker | null = null;
 const CONCURRENCY = 2;
 const CHUNK_SIZE = 250;
-const CSV_IMPORT_TAG = "import:csv";
-
-const parseStringArray = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
-  if (typeof value === "string") return value.split(",").map((s) => s.trim()).filter(Boolean);
-  return [];
-};
 
 export const processLeadImportJob = async (
   data: LeadImportJobData,
   onProgress?: (percent: number) => Promise<void>
 ): Promise<void> => {
-  const { jobId, tenantId, actorId, rows } = data;
-  logger.info(`[lead-import-worker] Starting import jobId=${jobId} (rows=${rows.length}) for tenant=${tenantId}`);
+  const { jobId, tenantId, actorId, rows, importType, assignment, skipDuplicates } = data;
+  logger.info(
+    `[lead-import-worker] Starting import jobId=${jobId} (type=${importType}, mode=${assignment.mode}, rows=${rows.length}) for tenant=${tenantId}`
+  );
 
   const now = new Date();
   const progress: LeadImportProgress = {
     jobId,
     tenantId,
     actorId,
+    importType,
     status: "processing",
     total: rows.length,
     processed: 0,
     imported: 0,
     skipped: 0,
+    skippedRows: [],
     percent: 0,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -54,7 +55,6 @@ export const processLeadImportJob = async (
   await setLeadImportProgress(jobId, progress);
 
   try {
-    // 1. Capacity check
     const currentLeads = await leadsRepository.countByTenant(tenantId);
     await entitlementsService.ensureCapacity(
       tenantId,
@@ -64,7 +64,6 @@ export const processLeadImportJob = async (
       "leads"
     );
 
-    // 2. Preload existing identifiers
     const existing = await leadsRepository.existingIdentifiers(tenantId);
     const seenEmails = new Set<string>();
     const seenPhones = new Set<string>();
@@ -72,79 +71,49 @@ export const processLeadImportJob = async (
     const totalRows = rows.length;
     let totalImported = 0;
     let totalSkipped = 0;
+    let assignIdx = 0;
+    const allSkippedRows: SkippedImportRow[] = [];
+    const ownerCounts = new Map<string, number>();
+    const preserveOwner = assignment.mode !== "default";
 
-    // 3. Process in chunks of CHUNK_SIZE
     for (let i = 0; i < totalRows; i += CHUNK_SIZE) {
       const chunk = rows.slice(i, i + CHUNK_SIZE);
-      const toInsert: BulkCreateLeadData[] = [];
-      let chunkSkipped = 0;
+      const prepared = prepareBulkImportChunk({
+        tenantId,
+        importType,
+        rows: chunk,
+        startRowNumber: i + 1,
+        existing,
+        seenEmails,
+        seenPhones,
+        skipDuplicates,
+        assignment,
+        startAssignIndex: assignIdx,
+        csvImportTag: CSV_IMPORT_TAG,
+      });
+      assignIdx = prepared.nextAssignIndex;
 
-      for (const raw of chunk) {
-        const b = (raw ?? {}) as Record<string, unknown>;
-        const email = typeof b.email === "string" ? b.email.trim() : "";
-        const phone = typeof b.phone === "string" ? normalizePhone(b.phone) : "";
-        const emailKey = email.toLowerCase();
-
-        const dupInFile =
-          (!!emailKey && seenEmails.has(emailKey)) || (!!phone && seenPhones.has(phone));
-        const dupInDb =
-          (!!emailKey && existing.emails.has(emailKey)) || (!!phone && existing.phones.has(phone));
-
-        if (dupInFile || dupInDb) {
-          chunkSkipped++;
-          continue;
-        }
-
-        if (emailKey) seenEmails.add(emailKey);
-        if (phone) seenPhones.add(phone);
-
-        const source = typeof b.source === "string" && b.source ? b.source : "CSV Upload";
-        const tags = parseStringArray(b.tags);
-        const notes = typeof b.notes === "string" ? b.notes : "";
-
-        const score = scoreLead(
-          { id: "", source, tags, notes, budget: false, last_activity_at: now, created_at: now },
-          [],
-          []
-        );
-
-        if (!tags.some((t) => t.toLowerCase() === CSV_IMPORT_TAG.toLowerCase())) {
-          tags.push(CSV_IMPORT_TAG);
-        }
-
-        toInsert.push({
-          tenant_id: tenantId,
-          name: typeof b.name === "string" && b.name ? b.name : "Unknown",
-          email,
-          phone,
-          city: typeof b.city === "string" ? b.city : "",
-          country: typeof b.country === "string" ? b.country : "India",
-          source,
-          tags,
-          notes,
-          budget: false,
-          score_total: score.total,
-          score_grade: score.grade,
-          score_breakdown: score,
-        });
+      if (allSkippedRows.length < 200 && prepared.skippedRows.length > 0) {
+        allSkippedRows.push(...prepared.skippedRows.slice(0, 200 - allSkippedRows.length));
       }
 
-      // Insert chunk
+      const toInsert: BulkCreateLeadData[] = prepared.toInsert;
       let insertedChunk: LeadRow[] = [];
       if (toInsert.length > 0) {
         insertedChunk = await leadsRepository.bulkCreate(toInsert);
-        // Also register newly inserted into existing sets
         for (const ins of insertedChunk) {
           if (ins.email) existing.emails.add(ins.email.toLowerCase());
           if (ins.phone) existing.phones.add(ins.phone);
+          if (ins.owner_id) {
+            ownerCounts.set(ins.owner_id, (ownerCounts.get(ins.owner_id) ?? 0) + 1);
+          }
         }
 
-        // Run per-chunk automation safely
-        await executeImportAutomationChunk(tenantId, actorId, insertedChunk);
+        await executeImportAutomationChunk(tenantId, actorId, insertedChunk, preserveOwner);
       }
 
       totalImported += insertedChunk.length;
-      totalSkipped += chunkSkipped;
+      totalSkipped += prepared.skipped;
 
       const processedCount = Math.min(totalRows, i + chunk.length);
       const percent = Math.round((processedCount / totalRows) * 100);
@@ -152,6 +121,7 @@ export const processLeadImportJob = async (
       progress.processed = processedCount;
       progress.imported = totalImported;
       progress.skipped = totalSkipped;
+      progress.skippedRows = allSkippedRows;
       progress.percent = percent;
       progress.updatedAt = new Date().toISOString();
 
@@ -159,16 +129,19 @@ export const processLeadImportJob = async (
       if (onProgress) await onProgress(percent);
     }
 
-    // 4. Complete
     progress.status = "completed";
     progress.percent = 100;
     progress.updatedAt = new Date().toISOString();
     await setLeadImportProgress(jobId, progress);
 
-    // Audit log
+    await notifyAssignedImportOwners(tenantId, actorId, importType, ownerCounts);
+
     engineService.audit(tenantId, actorId, "lead.bulk_import", "lead", undefined, {
       count: totalImported,
       skipped: totalSkipped,
+      importType,
+      assignmentMode: assignment.mode,
+      ownerIds: assignment.ownerIds ?? [],
       jobId,
     });
 
@@ -228,7 +201,8 @@ registerLeadImportProcessor(processLeadImportJob);
 const executeImportAutomationChunk = async (
   tenantId: string,
   actorId: string,
-  leads: LeadRow[]
+  leads: LeadRow[],
+  preserveOwner: boolean
 ): Promise<void> => {
   if (leads.length === 0) return;
   try {
@@ -242,14 +216,14 @@ const executeImportAutomationChunk = async (
       .executeTakeFirst();
 
     const strategy = await leadsService.defaultAssignmentStrategy(tenantId);
-    if (!hasFlows && strategy === "MANUAL") return;
+    if (!hasFlows && (preserveOwner || strategy === "MANUAL")) return;
 
     for (const lead of leads) {
       try {
         if (hasFlows) {
-          await engineService.emit(tenantId, actorId, "lead.created", { lead });
+          await engineService.emit(tenantId, actorId, "lead.created", { lead, preserveOwner });
         }
-        if (strategy !== "MANUAL") {
+        if (!preserveOwner && strategy !== "MANUAL") {
           const current = hasFlows
             ? (await leadsRepository.findById(lead.id, tenantId)) ?? lead
             : lead;

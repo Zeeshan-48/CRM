@@ -85,8 +85,19 @@ class PlivoWebhookService {
    */
   async handleHangup(cfg: PlivoConfigRow | null, payload: Record<string, any>, callIdFromQuery?: string) {
     const callUuid = String(payload.CallUUID ?? payload.call_uuid ?? payload.ALegUUID ?? payload.ParentCallUUID ?? "");
-    const dialStatus = String(payload.DialStatus ?? payload.CallStatus ?? payload.call_status ?? "completed").toLowerCase();
-    const duration = Number(payload.DialDuration ?? payload.Duration ?? payload.duration ?? 0);
+    const rawDialStatus = String(payload.DialStatus ?? payload.CallStatus ?? payload.call_status ?? "completed")
+      .trim()
+      .toLowerCase();
+    const dialStatus =
+      rawDialStatus === "cancel"
+        ? "canceled"
+        : rawDialStatus === "no_answer"
+          ? "no-answer"
+          : rawDialStatus || "completed";
+    const duration = Math.max(
+      0,
+      Math.trunc(Number(payload.DialDuration ?? payload.Duration ?? payload.duration ?? 0) || 0)
+    );
     const recordingUrl = payload.RecordUrl ?? payload.recording_url ?? null;
 
     logger.info(`[plivo-webhook] hangup for callUuid=${callUuid}, status=${dialStatus}, duration=${duration}, recordingUrl=${String(recordingUrl)}`);

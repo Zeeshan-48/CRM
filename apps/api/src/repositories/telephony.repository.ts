@@ -18,6 +18,15 @@ export type EnrichedVoiceCallRow = VoiceCallRow & {
 // Call statuses Twilio will not move past, so the poller can stop checking.
 export const TERMINAL_CALL_STATUSES = ["completed", "busy", "failed", "no-answer", "canceled"];
 
+export const CLIENT_ALLOWED_CALL_STATUSES = [
+  "in-progress",
+  "completed",
+  "failed",
+  "canceled",
+  "no-answer",
+  "busy",
+] as const;
+
 class TelephonyRepository {
   // ---- Config (one per tenant) ----
   async getConfig(tenantId: string): Promise<TenantTelephonyRow | undefined> {
@@ -371,6 +380,142 @@ class TelephonyRepository {
       .where("id", "=", id)
       .returningAll()
       .executeTakeFirst();
+  }
+
+  /**
+   * Non-destructive call state reconciliation helper shared by browser WebRTC
+   * sync, Plivo poller, and the stale-call sweeper:
+   * - Never downgrades an already-terminal call back to queued/in-progress.
+   * - Never lets client fallback overwrite a provider-reported terminal status.
+   * - Never wipes a non-zero duration or already-mirrored storage key.
+   */
+  async syncCallStateSafe(
+    tenantId: string | null,
+    id: string,
+    patch: {
+      call_status: string;
+      duration_sec?: number;
+      recording_url?: string | null;
+      call_error?: string | null;
+      completed_at?: Date | null;
+    },
+    opts?: { allowOverwriteTerminal?: boolean }
+  ): Promise<VoiceCallRow | undefined> {
+    let q = db.selectFrom("voice_calls").selectAll().where("id", "=", id);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    const existing = await q.executeTakeFirst();
+    if (!existing) return undefined;
+
+    const alreadyTerminal =
+      !!existing.call_status && TERMINAL_CALL_STATUSES.includes(existing.call_status);
+    const targetIsTerminal = TERMINAL_CALL_STATUSES.includes(patch.call_status);
+    const allowOverwriteTerminal = opts?.allowOverwriteTerminal ?? false;
+
+    const set: Record<string, unknown> = {};
+
+    if (!alreadyTerminal || (allowOverwriteTerminal && targetIsTerminal)) {
+      if (patch.call_status !== existing.call_status) {
+        set.call_status = patch.call_status;
+      }
+      if (targetIsTerminal && !existing.completed_at) {
+        set.completed_at = patch.completed_at ?? new Date();
+      }
+    }
+
+    if (
+      patch.duration_sec !== undefined &&
+      patch.duration_sec >= 0 &&
+      (existing.duration_sec === 0 || patch.duration_sec > (existing.duration_sec ?? 0))
+    ) {
+      set.duration_sec = patch.duration_sec;
+    }
+
+    if (
+      patch.recording_url &&
+      (!existing.recording_url || existing.recording_url.startsWith("http")) &&
+      patch.recording_url !== existing.recording_url
+    ) {
+      set.recording_url = patch.recording_url;
+    }
+
+    if (patch.call_error !== undefined && (!existing.call_error || allowOverwriteTerminal)) {
+      set.call_error = patch.call_error;
+    }
+
+    if (Object.keys(set).length === 0) return existing;
+    set.updated_at = new Date();
+
+    let upd = db.updateTable("voice_calls").set(set as never).where("id", "=", existing.id);
+    if (tenantId) upd = upd.where("tenant_id", "=", tenantId);
+    return upd.returningAll().executeTakeFirstOrThrow();
+  }
+
+  /** Non-terminal Plivo calls created within `since` that have a provider UUID. */
+  async pollablePlivoCalls(
+    since: Date,
+    limit = 50
+  ): Promise<Array<{ id: string; tenant_id: string; external_call_id: string; call_status: string | null }>> {
+    const rows = await db
+      .selectFrom("voice_calls")
+      .select(["id", "tenant_id", "external_call_id", "call_status"])
+      .where("provider", "=", "plivo")
+      .where("external_call_id", "is not", null)
+      .where("external_call_id", "not like", "sim\\_%")
+      .where("created_at", ">", since)
+      .where((eb) =>
+        eb.or([eb("call_status", "is", null), eb("call_status", "not in", TERMINAL_CALL_STATUSES)])
+      )
+      .orderBy("created_at", "desc")
+      .limit(limit)
+      .execute();
+    return rows.filter(
+      (
+        r
+      ): r is {
+        id: string;
+        tenant_id: string;
+        external_call_id: string;
+        call_status: string | null;
+      } => !!r.external_call_id
+    );
+  }
+
+  /**
+   * Calls stuck in non-terminal statuses past safe TTL windows:
+   * - queued / initiated / ringing / null older than `queuedCutoff`
+   * - in-progress with recording already present older than `queuedCutoff`
+   * - in-progress without recording older than `inProgressCutoff`
+   */
+  async findStaleNonTerminalCalls(
+    queuedCutoff: Date,
+    inProgressCutoff: Date,
+    limit = 100
+  ): Promise<VoiceCallRow[]> {
+    return db
+      .selectFrom("voice_calls")
+      .selectAll()
+      .where("provider", "in", ["plivo", "twilio", "exotel"])
+      .where((eb) =>
+        eb.or([
+          eb.and([
+            eb.or([
+              eb("call_status", "is", null),
+              eb("call_status", "in", ["queued", "initiated", "ringing"]),
+            ]),
+            eb("created_at", "<", queuedCutoff),
+          ]),
+          eb.and([
+            eb("call_status", "=", "in-progress"),
+            eb("recording_url", "is not", null),
+            eb("recording_url", "!=", ""),
+            eb("created_at", "<", queuedCutoff),
+          ]),
+          eb.and([eb("call_status", "=", "in-progress"), eb("created_at", "<", inProgressCutoff)]),
+        ])
+      )
+      .orderBy("created_at", "asc")
+      .limit(limit)
+      .execute();
   }
 
   /** The agent who last finished a call with this lead, the sticky pick. */

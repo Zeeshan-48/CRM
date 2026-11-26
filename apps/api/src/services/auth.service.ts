@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 import config from "../config";
+import { extractAllowedImportTypes, type LeadImportType } from "../constants/lead-import.const";
 import { GOVERNANCE_CAPABILITIES, isGovernanceCapability } from "../constants/modules.const";
 import { BadRequestError, ForbiddenError, UnauthorizedError } from "../errors";
 import tenantsRepository from "../repositories/tenants.repository";
@@ -64,6 +65,7 @@ export interface PublicUser {
     brand_color: string;
     plan_key: string | null;
     domain: string | null;
+    allowed_import_types: LeadImportType[];
   };
 }
 
@@ -141,6 +143,7 @@ class AuthService {
           brand_color: matched.tenant_brand_color,
           plan_key: matched.tenant_plan_key,
           domain: matched.tenant_domain,
+          allowed_import_types: extractAllowedImportTypes(matched.tenant_config),
         },
       },
     };
@@ -188,6 +191,7 @@ class AuthService {
         brand_color: tenant.brand_color,
         plan_key: tenant.plan_key,
         domain: tenant.domain,
+        allowed_import_types: extractAllowedImportTypes(tenant.config),
       },
     };
   }

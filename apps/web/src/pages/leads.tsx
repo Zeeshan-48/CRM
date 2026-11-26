@@ -8,8 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  FileSpreadsheet,
-  FileUp,
   Loader2,
   Plus,
   Search,
@@ -27,11 +25,9 @@ import { toast } from "sonner";
 
 import {
   assignLead,
-  bulkImportLeads,
   bulkLeadAction,
   createLead,
   downloadLeadsCsv,
-  getLeadImportJobStatus,
   getLeadSources,
   getLeadTags,
   listLeads,
@@ -39,17 +35,23 @@ import {
   LEAD_GRADES,
   LEAD_STATUSES,
   LEAD_STATUS_LABELS,
-  type BulkLeadRow,
   type Lead,
   type LeadGrade,
-  type LeadImportJobProgress,
+  type SkippedImportRow,
 } from "@/lib/api/leads";
+import { LeadImportDialog } from "@/components/leads/LeadImportDialog";
+import {
+  downloadSkippedImportCsv,
+  getLeadVerticalSubtitle,
+  IMPORT_TYPE_LABELS,
+} from "@/lib/lead-import";
 import { getTenantMe } from "@/lib/api/tenant";
 import { listUsers } from "@/lib/api/users";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/format";
 import { useAuthStore } from "@/stores/auth-store";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { cn } from "@/lib/utils";
+import type { LeadImportType } from "@/types";
 import { EmptyState } from "@/components/layout/EmptyState";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +92,7 @@ const UNASSIGNED = "unassigned";
 // of assigning to a specific person.
 const AUTO_ASSIGN = "__auto__";
 const PAGE_SIZE = 15;
+const EMPTY_IMPORT_TYPES: LeadImportType[] = [];
 
 // Friendly labels for the workspace's default lead-assignment strategy.
 const STRATEGY_LABELS: Record<string, string> = {
@@ -142,6 +145,7 @@ interface Filters {
   q: string;
   source: string;
   tag: string;
+  importType: string;
   status: string;
   owner: string;
   grade: string;
@@ -158,6 +162,7 @@ const EMPTY_FILTERS: Filters = {
   q: "",
   source: "",
   tag: "",
+  importType: "",
   status: "",
   owner: "",
   grade: "",
@@ -223,131 +228,6 @@ const pageWindow = (current: number, totalPages: number): (number | "…")[] => 
   pages.push(totalPages);
   return pages;
 };
-
-// Columns the importer understands, mapped from a spreadsheet header row.
-// Field key -> the header labels people actually use (case/space-insensitive).
-const COLUMN_ALIASES: Record<keyof BulkLeadRow, string[]> = {
-  name: ["name", "full name", "lead name", "contact name", "fullname"],
-  email: ["email", "e-mail", "email address", "mail"],
-  phone: ["phone", "phone number", "mobile", "mobile number", "contact", "contact number"],
-  city: ["city", "location", "town"],
-  source: ["source", "lead source", "channel", "campaign"],
-  country: ["country"],
-  tags: ["tags", "tag", "labels"],
-  notes: ["notes", "note", "remarks", "comment", "comments"],
-};
-
-// If no header row is present, cells are read in this fixed order.
-const POSITIONAL_FIELDS: (keyof BulkLeadRow)[] = ["name", "email", "phone", "city", "source"];
-
-const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
-
-/**
- * Tokenizes CSV text into rows of string cells, RFC-4180 style: honors quoted
- * fields, commas and newlines inside quotes, and "" escaped quotes. This is what
- * lets values like a company name with a comma survive intact.
- */
-const parseCsv = (input: string): string[][] => {
-  let text = input;
-  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1); // strip BOM
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else inQuotes = false;
-      } else field += c;
-      continue;
-    }
-    if (c === '"') inQuotes = true;
-    else if (c === ",") {
-      row.push(field);
-      field = "";
-    } else if (c === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (c !== "\r") field += c;
-  }
-  row.push(field);
-  rows.push(row);
-  // Drop rows that are entirely blank (trailing newline, empty lines).
-  return rows.filter((r) => r.some((cell) => cell.trim() !== ""));
-};
-
-interface ParsedImport {
-  rows: BulkLeadRow[];
-  skipped: number;
-  usedHeader: boolean;
-}
-
-/**
- * Turns raw CSV cells into lead rows. Detects a header row and maps columns by
- * name (any order, extra columns ignored); falls back to fixed positional order
- * (name,email,phone,city,source) when no recognizable header is present. Rows
- * with no name, email and phone are skipped.
- */
-const rowsToLeads = (records: string[][]): ParsedImport => {
-  if (records.length === 0) return { rows: [], skipped: 0, usedHeader: false };
-
-  const headerCells = records[0].map(norm);
-  const headerMap: (keyof BulkLeadRow | null)[] = headerCells.map((cell) => {
-    for (const key of Object.keys(COLUMN_ALIASES) as (keyof BulkLeadRow)[]) {
-      if (COLUMN_ALIASES[key].includes(cell)) return key;
-    }
-    return null;
-  });
-  const usedHeader = headerMap.filter(Boolean).length >= 2;
-
-  const mapping = usedHeader ? headerMap : POSITIONAL_FIELDS;
-  const dataRows = usedHeader ? records.slice(1) : records;
-
-  const rows: BulkLeadRow[] = [];
-  let skipped = 0;
-  for (const rec of dataRows) {
-    const lead: BulkLeadRow = {};
-    rec.forEach((cell, idx) => {
-      const key = mapping[idx];
-      const value = cell.trim();
-      if (!key || !value) return;
-      if (key === "tags") lead.tags = value.split(/[;,|]/).map((t) => t.trim()).filter(Boolean);
-      else lead[key] = value;
-    });
-    if (!lead.name && !lead.email && !lead.phone) {
-      skipped++;
-      continue;
-    }
-    rows.push(lead);
-  }
-  return { rows, skipped, usedHeader };
-};
-
-// Columns shown in the import guide. `id` = one of the identifier columns
-// (a row needs at least one), the rest are optional enrichment.
-const IMPORT_COLUMNS: { label: string; id?: boolean }[] = [
-  { label: "Name", id: true },
-  { label: "Email", id: true },
-  { label: "Phone", id: true },
-  { label: "City" },
-  { label: "Source" },
-  { label: "Country" },
-  { label: "Tags" },
-  { label: "Notes" },
-];
-
-// A ready-to-fill template users can download, open in Excel/Sheets, and re-upload.
-const TEMPLATE_CSV =
-  "name,email,phone,city,source,country,tags,notes\n" +
-  "Priya Sharma,priya@example.com,+919876543210,Bengaluru,Webinar,India,vip;enterprise,Met at conference\n" +
-  "Rahul Verma,rahul@example.org,+919812345678,Pune,Website,India,,Requested a demo\n";
 
 function ScoreBadge({ grade, total }: { grade: LeadGrade; total: number }) {
   return (
@@ -417,6 +297,7 @@ export default function LeadsPage() {
     debouncedQ,
     filters.source,
     filters.tag,
+    filters.importType,
     filters.status,
     filters.owner,
     filters.grade,
@@ -449,6 +330,7 @@ export default function LeadsPage() {
     q: debouncedQ || undefined,
     source: filters.source || undefined,
     tag: filters.tag || undefined,
+    importType: filters.importType || undefined,
     status: filters.status || undefined,
     owner: filters.owner || undefined,
     grade: filters.grade || undefined,
@@ -473,6 +355,7 @@ export default function LeadsPage() {
         q: queryParams.q,
         source: queryParams.source,
         tag: queryParams.tag,
+        importType: queryParams.importType,
         status: queryParams.status,
         owner: queryParams.owner,
         grade: queryParams.grade,
@@ -573,11 +456,20 @@ export default function LeadsPage() {
     !!debouncedQ ||
     !!filters.source ||
     !!filters.tag ||
+    !!filters.importType ||
     !!filters.status ||
     !!filters.owner ||
     !!filters.grade ||
     !!filters.createdRange ||
     !!filters.activityRange;
+
+  // Return raw nullable slice from Zustand selector (never `?? []` inside selector)
+  // so React 19's useSyncExternalStore gets a referentially stable snapshot.
+  const storeAllowedImportTypes = useAuthStore((s) => s.user?.tenant?.allowed_import_types);
+  const allowedImportTypes =
+    storeAllowedImportTypes ??
+    tenantQuery.data?.tenant?.allowed_import_types ??
+    EMPTY_IMPORT_TYPES;
 
   // ---- Selection ----
   const allOnPageSelected =
@@ -616,14 +508,6 @@ export default function LeadsPage() {
     notes: "",
     owner_id: AUTO_ASSIGN,
   });
-  // CSV import: a file drop/upload is the primary path; pasting is kept as a
-  // fallback. Both funnel through `parseImportText` into `importParsed`.
-  const [importText, setImportText] = React.useState("");
-  const [importFileName, setImportFileName] = React.useState<string | null>(null);
-  const [importError, setImportError] = React.useState<string | null>(null);
-  const [importDragging, setImportDragging] = React.useState(false);
-  const [showPaste, setShowPaste] = React.useState(false);
-  const importInputRef = React.useRef<HTMLInputElement>(null);
   const [tagValue, setTagValue] = React.useState("");
   const [exporting, setExporting] = React.useState(false);
 
@@ -656,189 +540,9 @@ export default function LeadsPage() {
     onError: (error: Error) => toast.error(error.message),
   });
 
-  const resetImport = React.useCallback(() => {
-    setImportText("");
-    setImportFileName(null);
-    setImportError(null);
-    setImportDragging(false);
-    setShowPaste(false);
-    if (importInputRef.current) importInputRef.current.value = "";
-  }, []);
-
   const [importSuccess, setImportSuccess] = React.useState<number | null>(null);
   const [importSkipped, setImportSkipped] = React.useState(0);
-  const [importFailed, setImportFailed] = React.useState<string | null>(null);
-  const [activeImportJobId, setActiveImportJobId] = React.useState<string | null>(null);
-  const [importJobProgress, setImportJobProgress] = React.useState<LeadImportJobProgress | null>(null);
-
-  React.useEffect(() => {
-    if (!activeImportJobId) return;
-    let timer: NodeJS.Timeout;
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const res = await getLeadImportJobStatus(activeImportJobId);
-        if (cancelled) return;
-        setImportJobProgress(res);
-
-        if (res.status === "completed") {
-          setActiveImportJobId(null);
-          setImportOpen(false);
-          resetImport();
-          invalidateLeads();
-          setImportSkipped(res.skipped);
-          setImportSuccess(res.imported);
-          toast.success(`Import complete: ${res.imported} leads added!`);
-        } else if (res.status === "failed") {
-          setActiveImportJobId(null);
-          setImportFailed(res.error || "Lead import failed in background worker.");
-        } else {
-          timer = setTimeout(poll, 1000);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          timer = setTimeout(poll, 2000);
-        }
-      }
-    };
-
-    poll();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [activeImportJobId, invalidateLeads, resetImport]);
-
-  const importMutation = useMutation({
-    mutationFn: bulkImportLeads,
-    onSuccess: (result) => {
-      if (result.async && result.jobId) {
-        setActiveImportJobId(result.jobId);
-        toast.info("Import queued in background worker...", { duration: 3000 });
-        return;
-      }
-      setImportOpen(false);
-      resetImport();
-      invalidateLeads();
-      setImportSkipped(result.skipped);
-      setImportSuccess(result.imported);
-    },
-    onError: (error: Error) => {
-      // Keep the import dialog open (with its file/preview intact) behind the
-      // error so the user can fix and retry after dismissing.
-      setImportFailed(error.message || "Something went wrong while importing.");
-    },
-  });
-
-  // Parse whatever is currently loaded (file contents live in importText too, so
-  // the preview and the paste box share one source of truth).
-  const importParsed = React.useMemo(
-    () => (importText.trim() ? rowsToLeads(parseCsv(importText)) : null),
-    [importText],
-  );
-
-  // While the import dialog is open, stop the browser's default "open the
-  // dropped file" behavior anywhere on the page, otherwise a drop that misses
-  // the drop zone navigates away and the feature looks broken.
-  React.useEffect(() => {
-    if (!importOpen) return;
-    const prevent = (e: DragEvent) => e.preventDefault();
-    window.addEventListener("dragover", prevent);
-    window.addEventListener("drop", prevent);
-    return () => {
-      window.removeEventListener("dragover", prevent);
-      window.removeEventListener("drop", prevent);
-    };
-  }, [importOpen]);
-
-  const readImportFile = (file: File) => {
-    setImportError(null);
-    const isCsv =
-      /\.(csv|txt|tsv)$/i.test(file.name) ||
-      file.type === "text/csv" ||
-      file.type === "text/plain" ||
-      file.type === "";
-    if (!isCsv) {
-      setImportFileName(null);
-      setImportText("");
-      setImportError(
-        /\.xlsx?$/i.test(file.name)
-          ? "Excel files aren't supported directly. In Excel/Sheets choose File → Save as / Download → CSV, then upload that."
-          : "Unsupported file. Please upload a .csv file.",
-      );
-      return;
-    }
-    file
-      .text()
-      .then((text) => {
-        setImportText(text);
-        setImportFileName(file.name);
-        setShowPaste(false);
-      })
-      .catch(() => setImportError("Could not read that file. Try re-saving it as CSV."));
-  };
-
-  const downloadTemplate = () => {
-    const blob = new Blob([TEMPLATE_CSV], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "leads-template.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // Root cause of drag & drop failing: the dialog is rendered in a React portal
-  // (Radix) attached to <body>, outside the app's React root. React's synthetic
-  // dragover/drop handlers are delegated at the root container, so native drag
-  // events on the portalled node never reach them, the element is never armed
-  // as a valid drop target and the browser rejects the drop. Fix: attach REAL
-  // native listeners straight to the node via a callback ref, which runs exactly
-  // when the drop zone mounts/unmounts regardless of where it lives in the DOM.
-  const dropCleanup = React.useRef<(() => void) | null>(null);
-  const dropZoneRef = React.useCallback((node: HTMLDivElement | null) => {
-    dropCleanup.current?.();
-    dropCleanup.current = null;
-    if (!node) return;
-
-    const stop = (e: DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-    };
-    const onEnter = (e: DragEvent) => {
-      stop(e);
-      setImportDragging(true);
-    };
-    const onOver = (e: DragEvent) => {
-      stop(e);
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      setImportDragging(true);
-    };
-    const onLeave = (e: DragEvent) => {
-      stop(e);
-      if (!node.contains(e.relatedTarget as Node | null)) setImportDragging(false);
-    };
-    const onDrop = (e: DragEvent) => {
-      stop(e);
-      setImportDragging(false);
-      const file = e.dataTransfer?.files?.[0];
-      if (file) readImportFile(file);
-    };
-
-    node.addEventListener("dragenter", onEnter);
-    node.addEventListener("dragover", onOver);
-    node.addEventListener("dragleave", onLeave);
-    node.addEventListener("drop", onDrop);
-    dropCleanup.current = () => {
-      node.removeEventListener("dragenter", onEnter);
-      node.removeEventListener("dragover", onOver);
-      node.removeEventListener("dragleave", onLeave);
-      node.removeEventListener("drop", onDrop);
-    };
-    // Handlers only use stable state setters, so this ref never needs re-binding.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [importSkippedRows, setImportSkippedRows] = React.useState<SkippedImportRow[]>([]);
 
   const bulkMutation = useMutation({
     mutationFn: bulkLeadAction,
@@ -900,7 +604,7 @@ export default function LeadsPage() {
               onClick={() => setImportOpen(true)}
             >
               <Upload className="size-4" />
-              Import CSV
+              Import Excel / CSV
             </Button>
             <Button size="sm" onClick={() => setNewLeadOpen(true)}>
               <Plus className="size-4" />
@@ -966,6 +670,27 @@ export default function LeadsPage() {
                   {tag}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {(allowedImportTypes.length > 1 || !!filters.importType) && (
+          <Select
+            value={filters.importType || ALL}
+            onValueChange={(v) => patchFilters({ importType: v === ALL ? "" : v })}
+          >
+            <SelectTrigger aria-label="Filter by data type" className="w-[165px]">
+              <SelectValue placeholder="Data Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All data types</SelectItem>
+              {(Object.keys(IMPORT_TYPE_LABELS) as (keyof typeof IMPORT_TYPE_LABELS)[])
+                .filter((k) => allowedImportTypes.includes(k) || filters.importType === k)
+                .map((typeKey) => (
+                  <SelectItem key={typeKey} value={typeKey}>
+                    {IMPORT_TYPE_LABELS[typeKey]}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         )}
@@ -1245,11 +970,24 @@ export default function LeadsPage() {
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <p className="font-medium">{lead.name}</p>
-                        {Array.isArray(lead.tags) && lead.tags.length > 0 ? (
-                          <p className="mt-0.5 max-w-[180px] truncate text-xs text-muted-foreground">
-                            {lead.tags.slice(0, 3).join(", ")}
-                          </p>
-                        ) : null}
+                        {(() => {
+                          const sub = getLeadVerticalSubtitle(lead);
+                          if (sub) {
+                            return (
+                              <p className="mt-0.5 max-w-[230px] truncate text-xs text-muted-foreground">
+                                {sub}
+                              </p>
+                            );
+                          }
+                          if (Array.isArray(lead.tags) && lead.tags.length > 0) {
+                            return (
+                              <p className="mt-0.5 max-w-[180px] truncate text-xs text-muted-foreground">
+                                {lead.tags.slice(0, 3).join(", ")}
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
                       </TableCell>
                       <TableCell className="whitespace-nowrap">
                         <p className="text-sm">{lead.email || "-"}</p>
@@ -1587,293 +1325,52 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Import CSV dialog */}
-      <Dialog
+      {/* Import Excel / CSV dialog */}
+      <LeadImportDialog
         open={importOpen}
-        onOpenChange={(open) => {
-          setImportOpen(open);
-          if (!open) resetImport();
+        onOpenChange={setImportOpen}
+        assignableUsers={assignableUsers}
+        onImported={(res) => {
+          invalidateLeads();
+          setImportSkipped(res.skipped);
+          setImportSkippedRows(res.skippedRows ?? []);
+          setImportSuccess(res.imported);
         }}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Import leads from a spreadsheet</DialogTitle>
-            <DialogDescription>
-              Upload a <code className="font-mono text-xs">.csv</code> file exported from Excel or
-              Google Sheets, columns are matched by their header, so any order works.
-            </DialogDescription>
-          </DialogHeader>
+      />
 
-          <input
-            ref={importInputRef}
-            type="file"
-            accept=".csv,.txt,.tsv,text/csv,text/plain"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) readImportFile(file);
-            }}
-          />
-
-          {/* The whole body is the drop zone (native listeners via dropZoneRef),
-              so a file landing near, but not exactly on, the dashed box is
-              still caught, and a window-level guard stops the browser opening the
-              file on a true miss outside the dialog. */}
-          {activeImportJobId ? (
-            <div className="py-6 space-y-4">
-              <div className="flex items-center justify-between text-sm font-medium">
-                <span className="flex items-center gap-2 text-foreground">
-                  <Loader2 className="size-4 animate-spin text-brand" />
-                  Processing {importJobProgress?.total ?? 0} leads in background...
-                </span>
-                <span className="font-mono text-brand font-semibold">
-                  {importJobProgress?.percent ?? 0}%
-                </span>
-              </div>
-
-              <div className="h-3 w-full overflow-hidden rounded-full bg-secondary/80 p-0.5">
-                <div
-                  className="h-full rounded-full bg-brand transition-all duration-300"
-                  style={{ width: `${importJobProgress?.percent ?? 0}%` }}
-                />
-              </div>
-
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Processed: {importJobProgress?.processed ?? 0} / {importJobProgress?.total ?? 0}</span>
-                <span>Imported: {importJobProgress?.imported ?? 0} • Skipped: {importJobProgress?.skipped ?? 0}</span>
-              </div>
-
-              <p className="text-[11px] text-muted-foreground bg-muted/40 p-3 rounded-lg border border-border/50">
-                The BullMQ background worker is validating duplicates, computing AI lead scores, and executing auto-assignment rules. You may safely close this dialog; the worker will continue processing in the background.
-              </p>
-            </div>
-          ) : (
-            <div ref={dropZoneRef} className="space-y-4">
-            {/* Dropzone */}
-            <button
-              type="button"
-              onClick={() => importInputRef.current?.click()}
-              className={cn(
-                "flex w-full flex-col items-center gap-2.5 rounded-xl border-2 border-dashed px-4 py-10 text-center transition-colors",
-                importDragging
-                  ? "border-brand bg-brand/5"
-                  : "border-border hover:border-brand/50 hover:bg-muted/40",
-              )}
-            >
-              <span className="flex size-12 items-center justify-center rounded-full bg-brand/10 text-brand">
-                <FileUp className="size-6" />
-              </span>
-              <span className="text-sm font-medium">
-                {importDragging
-                  ? "Drop the file to load it"
-                  : importFileName
-                    ? "Choose a different file"
-                    : "Click to upload, or drag & drop your file here"}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Accepts a single <span className="font-medium">.csv</span> file, up to a few thousand rows
-              </span>
-            </button>
-
-            {importError ? (
-              <p className="rounded-lg bg-danger/10 px-3 py-2 text-xs text-danger">{importError}</p>
-            ) : null}
-
-            {importFileName && importParsed ? (
-              /* Selected-file + parse summary */
-              <div className="overflow-hidden rounded-xl border">
-                <div className="flex items-center gap-2.5 border-b bg-muted/40 px-3.5 py-2.5">
-                  <FileSpreadsheet className="size-4 shrink-0 text-success" />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{importFileName}</span>
-                  <span className="shrink-0 text-xs font-semibold text-success">
-                    {importParsed.rows.length} ready
-                  </span>
-                  <button
-                    type="button"
-                    className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-                    aria-label="Remove file"
-                    onClick={resetImport}
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3.5 py-2 text-xs text-muted-foreground">
-                  <span>
-                    <span className="font-semibold text-foreground">{importParsed.rows.length}</span>{" "}
-                    {importParsed.rows.length === 1 ? "lead" : "leads"} to import
-                  </span>
-                  {importParsed.skipped > 0 ? (
-                    <span>{importParsed.skipped} empty row{importParsed.skipped === 1 ? "" : "s"} skipped</span>
-                  ) : null}
-                  <span>
-                    {importParsed.usedHeader
-                      ? "Columns matched from your header row"
-                      : "No header found, read as name, email, phone, city, source"}
-                  </span>
-                </div>
-                {importParsed.rows.length > 0 ? (
-                  <div className="max-h-44 overflow-auto border-t">
-                    <table className="w-full text-left text-xs">
-                      <thead className="sticky top-0 bg-card text-[10px] uppercase tracking-wide text-muted-foreground shadow-[inset_0_-1px_0_hsl(var(--border))]">
-                        <tr>
-                          <th className="px-3.5 py-2 font-medium">Name</th>
-                          <th className="px-3.5 py-2 font-medium">Email</th>
-                          <th className="px-3.5 py-2 font-medium">Phone</th>
-                          <th className="px-3.5 py-2 font-medium">City</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {importParsed.rows.slice(0, 6).map((r, i) => (
-                          <tr key={i} className="border-t">
-                            <td className="max-w-[10rem] truncate px-3.5 py-1.5 font-medium">{r.name || "-"}</td>
-                            <td className="max-w-[12rem] truncate px-3.5 py-1.5 text-muted-foreground">{r.email || "-"}</td>
-                            <td className="truncate px-3.5 py-1.5 text-muted-foreground">{r.phone || "-"}</td>
-                            <td className="truncate px-3.5 py-1.5 text-muted-foreground">{r.city || "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    {importParsed.rows.length > 6 ? (
-                      <p className="border-t bg-muted/30 px-3.5 py-1.5 text-[11px] text-muted-foreground">
-                        + {importParsed.rows.length - 6} more row{importParsed.rows.length - 6 === 1 ? "" : "s"}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              /* Format guide, shown until a file is loaded */
-              <div className="border-t pt-4">
-                <p className="text-sm font-medium">What your file should contain</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  One lead per row, with a header row naming the columns. These are the columns we read
-                  (any order, extra columns are ignored):
-                </p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {IMPORT_COLUMNS.map((col) => (
-                    <span
-                      key={col.label}
-                      className={cn(
-                        "rounded-md border px-2 py-0.5 text-xs font-medium",
-                        col.id
-                          ? "border-brand/30 bg-brand/10 text-brand"
-                          : "border-border bg-card text-muted-foreground",
-                      )}
-                    >
-                      {col.label}
-                    </span>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-muted-foreground">
-                  <span className="font-medium text-brand">Highlighted</span> columns identify the lead,
-                  each row needs at least one of Name, Email or Phone. Tags can hold several values
-                  separated by <code className="font-mono text-[11px]">;</code> (e.g.{" "}
-                  <code className="font-mono text-[11px]">vip;enterprise</code>).
-                </p>
-              </div>
-            )}
-
-            {/* Helpers row */}
-            <div className="flex items-center justify-between text-xs">
-              <button
-                type="button"
-                onClick={downloadTemplate}
-                className="inline-flex items-center gap-1.5 font-medium text-brand hover:underline"
-              >
-                <Download className="size-3.5" />
-                Download template
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowPaste((v) => !v)}
-                className="font-medium text-muted-foreground hover:text-foreground"
-              >
-                {showPaste ? "Hide paste box" : "Or paste rows instead"}
-              </button>
-            </div>
-
-            {/* Paste fallback */}
-            {showPaste ? (
-              <Textarea
-                rows={6}
-                className="font-mono text-xs"
-                placeholder={
-                  "name,email,phone,city,source\nPriya Sharma,priya@example.com,+919876543210,Bengaluru,Webinar"
-                }
-                value={importFileName ? "" : importText}
-                onChange={(e) => {
-                  setImportFileName(null);
-                  setImportError(null);
-                  setImportText(e.target.value);
-                }}
-              />
-            ) : null}
-          </div>
-          )}
-
-          <DialogFooter>
-            {activeImportJobId ? (
-              <Button variant="outline" onClick={() => setImportOpen(false)}>
-                Close (Continue in background)
-              </Button>
-            ) : (
-              <>
-                <Button variant="outline" onClick={() => setImportOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  loading={importMutation.isPending}
-                  disabled={importMutation.isPending || !importParsed || importParsed.rows.length === 0}
-                  onClick={() => {
-                    if (!importParsed || importParsed.rows.length === 0) {
-                      toast.error("No valid rows found");
-                      return;
-                    }
-                    importMutation.mutate(importParsed.rows);
-                  }}
-                >
-                  {importParsed && importParsed.rows.length > 0
-                    ? `Import ${importParsed.rows.length} ${importParsed.rows.length === 1 ? "lead" : "leads"}`
-                    : "Import leads"}
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Import outcome, reusable global confirmation dialogs */}
+      {/* Import outcome */}
       <ResultDialog
         open={importSuccess !== null}
         onOpenChange={(open) => {
-          if (!open) setImportSuccess(null);
+          if (!open) {
+            setImportSuccess(null);
+            setImportSkippedRows([]);
+          }
         }}
         variant="success"
         title="Import complete"
         description={
-          <>
-            {importSuccess ?? 0} {importSuccess === 1 ? "lead has" : "leads have"} been added to
-            your workspace.
-            {importSkipped > 0 ? (
-              <>
-                {" "}
-                {importSkipped} duplicate{importSkipped === 1 ? "" : "s"} (same email or phone)
-                {importSkipped === 1 ? " was" : " were"} skipped.
-              </>
+          <div className="space-y-2">
+            <p>
+              {importSuccess ?? 0} {importSuccess === 1 ? "lead has" : "leads have"} been added to
+              your workspace.
+              {importSkipped > 0
+                ? ` ${importSkipped} row${importSkipped === 1 ? "" : "s"} skipped (duplicate or missing contact).`
+                : ""}
+            </p>
+            {importSkippedRows.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => downloadSkippedImportCsv(importSkippedRows)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand hover:underline"
+              >
+                <Download className="size-3.5" />
+                Download skipped rows ({importSkippedRows.length})
+              </button>
             ) : null}
-          </>
+          </div>
         }
-        autoCloseMs={5500}
-      />
-      <ResultDialog
-        open={importFailed !== null}
-        onOpenChange={(open) => {
-          if (!open) setImportFailed(null);
-        }}
-        variant="error"
-        title="Import failed"
-        description={importFailed}
-        actionLabel="Close"
+        autoCloseMs={importSkippedRows.length > 0 ? undefined : 5500}
       />
 
       {/* Tag dialog */}

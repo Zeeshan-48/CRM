@@ -20,6 +20,8 @@ export interface ApiErrorEnvelope {
 
 // ---- Auth ----
 
+export type LeadImportType = "sales" | "student_admission" | "medical" | "construction";
+
 export interface Tenant {
   id: string;
   slug: string;
@@ -27,6 +29,7 @@ export interface Tenant {
   brand_color: string;
   plan_key: string | null;
   domain: string | null;
+  allowed_import_types?: LeadImportType[];
 }
 
 export interface PublicTenant {

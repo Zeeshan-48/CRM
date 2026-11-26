@@ -1,9 +1,11 @@
 import crypto from "crypto";
 import { ulid } from "ulid";
 import config from "../config";
-import { BadRequestError, NotFoundError } from "../errors";
+import { BadRequestError, ForbiddenError, NotFoundError } from "../errors";
 import telephonyNumbersRepository from "../repositories/telephony-numbers.repository";
-import telephonyRepository from "../repositories/telephony.repository";
+import telephonyRepository, {
+  CLIENT_ALLOWED_CALL_STATUSES,
+} from "../repositories/telephony.repository";
 import { db } from "../db/connection";
 import { getRedis } from "../db/redis";
 import { decryptSecret, encryptSecret } from "../utils/crypto";
@@ -845,7 +847,7 @@ class TelephonyService {
   // Returns a short-lived playable URL. An <audio> tag cannot carry a JWT
   // header, so this JWT-guarded endpoint hands back a presigned URL instead of
   // streaming bytes itself.
-  async recordingUrl(tenantId: string, callId: string) {
+  async recordingUrl(tenantId: string, callId: string, baseUrl?: string) {
     const call = await telephonyRepository.getCallById(tenantId, callId);
     if (!call) throw new NotFoundError("Call not found");
     if (!call.recording_url) return { url: null, pending: false };
@@ -869,7 +871,7 @@ class TelephonyService {
           const key = `telephony/${tenantId}/${call.id}.mp3`;
           await storageService.upload({ key, body: audio, contentType: "audio/mpeg" });
           await telephonyRepository.updateCall(tenantId, callId, { recording_url: key });
-          const url = await storageService.getDownloadUrl(key, 3600);
+          const url = await storageService.getDownloadUrl(key, 3600, baseUrl);
           return { url, pending: false };
         }
       } catch (err) {
@@ -890,12 +892,58 @@ class TelephonyService {
       return { url: call.recording_url, pending: false };
     }
 
-    const url = await storageService.getDownloadUrl(call.recording_url, 3600);
+    const url = await storageService.getDownloadUrl(call.recording_url, 3600, baseUrl);
     return { url, pending: false };
   }
 
   async listCalls(tenantId: string) {
     return telephonyRepository.listCalls(tenantId);
+  }
+
+  /**
+   * Reconciles WebRTC / softphone call status from the agent's browser so failed,
+   * canceled, or simulated calls never remain stuck in "queued" / "in-progress".
+   */
+  async updateCallState(
+    tenantId: string,
+    actorId: string,
+    callId: string,
+    body: { status?: string; durationSec?: number; callError?: string }
+  ) {
+    const call = await telephonyRepository.getCallById(tenantId, callId);
+    if (!call) throw new NotFoundError("Call not found");
+    if (call.agent_user_id && call.agent_user_id !== actorId) {
+      throw new ForbiddenError("You can only update calls initiated by you");
+    }
+
+    const raw = String(body.status ?? "").trim().toLowerCase();
+    const status = raw === "cancel" ? "canceled" : raw === "no_answer" ? "no-answer" : raw;
+    if (!(CLIENT_ALLOWED_CALL_STATUSES as readonly string[]).includes(status)) {
+      throw new BadRequestError(
+        `status must be one of ${CLIENT_ALLOWED_CALL_STATUSES.join(", ")}`
+      );
+    }
+
+    const parsedDur = Number(body.durationSec);
+    const durationSec =
+      body.durationSec !== undefined && Number.isFinite(parsedDur) && parsedDur >= 0
+        ? Math.trunc(parsedDur)
+        : undefined;
+    const callError =
+      typeof body.callError === "string" && body.callError.trim()
+        ? body.callError.trim().slice(0, 500)
+        : undefined;
+
+    return telephonyRepository.syncCallStateSafe(
+      tenantId,
+      callId,
+      {
+        call_status: status,
+        ...(durationSec !== undefined ? { duration_sec: durationSec } : {}),
+        ...(callError !== undefined ? { call_error: callError } : {}),
+      },
+      { allowOverwriteTerminal: false }
+    );
   }
 
   // In-Browser WebRTC Session: provides dynamically generated credentials for browser calling

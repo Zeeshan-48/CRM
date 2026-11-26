@@ -12,6 +12,7 @@ export interface LeadsListParams {
   source?: string;
   /** Exact tag the lead must carry (e.g. "CSV Import"). */
   tag?: string;
+  importType?: string;
   status?: lead_status;
   owner?: string;
   grade?: lead_grade;
@@ -40,6 +41,8 @@ export interface CreateLeadData {
   socials?: Record<string, unknown> | null;
   notes?: string | null;
   budget?: boolean;
+  import_type?: string | null;
+  extra_fields?: Record<string, unknown> | null;
 }
 
 // A lead row for bulk insert, carrying its precomputed score so the importer
@@ -65,6 +68,7 @@ class LeadsRepository {
     // requested tag. Used by the "CSV Import" filter (and any tag) in the UI.
     if (params.tag)
       base = base.where(sql<boolean>`tags @> ${JSON.stringify([params.tag])}::jsonb`);
+    if (params.importType) base = base.where("import_type", "=", params.importType);
     if (params.status) base = base.where("status", "=", params.status);
     // "unassigned" is a sentinel for leads with no owner; any other value is an
     // exact owner-id match.
@@ -96,6 +100,7 @@ class LeadsRepository {
           eb("phone", "ilike", s),
           eb("city", "ilike", s),
           eb("source", "ilike", s),
+          sql<boolean>`extra_fields::text ILIKE ${s}`,
         ])
       );
     }
@@ -242,6 +247,8 @@ class LeadsRepository {
         socials: JSON.stringify(data.socials ?? {}),
         notes: data.notes ?? "",
         budget: data.budget ?? false,
+        import_type: data.import_type ?? null,
+        extra_fields: data.extra_fields ? JSON.stringify(data.extra_fields) : null,
         last_activity_at: now,
         created_at: now,
         updated_at: now,
@@ -290,6 +297,8 @@ class LeadsRepository {
       tags: JSON.stringify(data.tags ?? []),
       notes: data.notes ?? "",
       budget: data.budget ?? false,
+      import_type: data.import_type ?? null,
+      extra_fields: data.extra_fields ? JSON.stringify(data.extra_fields) : null,
       score_total: data.score_total,
       score_grade: data.score_grade,
       score_breakdown: JSON.stringify(data.score_breakdown),
@@ -330,6 +339,8 @@ class LeadsRepository {
       converted_contact_id: string | null;
       converted_deal_id: string | null;
       last_activity_at: Date;
+      import_type: string | null;
+      extra_fields: Record<string, unknown> | null;
     }>,
     trx?: Transaction<DB>
   ): Promise<LeadRow | undefined> {
@@ -349,12 +360,16 @@ class LeadsRepository {
       "converted_contact_id",
       "converted_deal_id",
       "last_activity_at",
+      "import_type",
     ] as const;
     for (const key of direct) {
       if (data[key] !== undefined) patch[key] = data[key];
     }
     if (data.tags !== undefined) patch.tags = JSON.stringify(data.tags);
     if (data.socials !== undefined) patch.socials = JSON.stringify(data.socials);
+    if (data.extra_fields !== undefined) {
+      patch.extra_fields = data.extra_fields ? JSON.stringify(data.extra_fields) : null;
+    }
 
     return (trx || db)
       .updateTable("leads")

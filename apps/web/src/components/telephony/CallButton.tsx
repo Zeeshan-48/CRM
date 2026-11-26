@@ -5,9 +5,11 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { placeCall } from "@/lib/api/telephony";
+import { apiBaseUrl } from "@/lib/api/client";
+import { placeCall, updateCallState } from "@/lib/api/telephony";
 import { plivoWebphone, type WebphoneCallState } from "@/lib/telephony/plivo-webrtc";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/auth-store";
 
 interface CallButtonProps {
   leadId?: string;
@@ -30,7 +32,7 @@ export function CallButton({
 }: CallButtonProps) {
   const queryClient = useQueryClient();
 
-  // Active call state for in-browser calling experience
+  // Active call state + refs so subscription/unload handlers never read stale null closures
   const [activeCall, setActiveCall] = React.useState<{
     id: string;
     fromNumber: string;
@@ -38,14 +40,80 @@ export function CallButton({
     recipient: string;
     simulated: boolean;
   } | null>(null);
+  const activeCallRef = React.useRef(activeCall);
+  activeCallRef.current = activeCall;
+
+  const connectedRef = React.useRef(false);
+  const startedAtRef = React.useRef<number | null>(null);
+  const finalizedCallIdRef = React.useRef<string | null>(null);
 
   const [callDuration, setCallDuration] = React.useState(0);
   const [isMuted, setIsMuted] = React.useState(false);
   const [webphoneStatus, setWebphoneStatus] = React.useState<WebphoneCallState>("UNINITIALIZED");
 
+  const invalidateCallQueries = React.useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
+    queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
+    queryClient.invalidateQueries({ queryKey: ["telephony-calls"] });
+  }, [queryClient, leadId, contactId]);
+
+  const finalizeCallRef = React.useRef<
+    (reason: "ended" | "failed" | "user_hangup") => void
+  >(() => {});
+
+  const finalizeCall = React.useCallback(
+    (reason: "ended" | "failed" | "user_hangup") => {
+      const current = activeCallRef.current;
+      if (!current) return;
+      if (finalizedCallIdRef.current === current.id) return;
+      finalizedCallIdRef.current = current.id;
+
+      plivoWebphone.hangup();
+
+      const elapsed = startedAtRef.current
+        ? Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000))
+        : 0;
+      const shouldComplete = current.simulated || connectedRef.current;
+      const nextStatus = shouldComplete
+        ? "completed"
+        : reason === "failed"
+          ? "failed"
+          : "canceled";
+
+      void updateCallState(current.id, {
+        status: nextStatus,
+        ...(shouldComplete ? { durationSec: elapsed } : {}),
+        ...(nextStatus === "failed"
+          ? { callError: "WebRTC call failed before connecting" }
+          : {}),
+      })
+        .catch(() => undefined)
+        .finally(() => {
+          invalidateCallQueries();
+        });
+
+      const labelDuration = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+      if (shouldComplete) {
+        toast.info(`Call ended (${labelDuration}). Call details saved to timeline.`);
+      } else if (nextStatus === "failed") {
+        toast.error("Call failed before connecting.");
+      } else {
+        toast.info("Call canceled.");
+      }
+
+      activeCallRef.current = null;
+      connectedRef.current = false;
+      startedAtRef.current = null;
+      setActiveCall(null);
+      setIsMuted(false);
+    },
+    [invalidateCallQueries]
+  );
+  finalizeCallRef.current = finalizeCall;
+
   // Subscribe to Plivo WebRTC events
   React.useEffect(() => {
-    // Auto-init WebRTC client in the background on mount
     void plivoWebphone.init();
 
     const unsubscribe = plivoWebphone.subscribe((state, call) => {
@@ -53,17 +121,51 @@ export function CallButton({
       if (call) {
         setIsMuted(call.isMuted);
       }
-      if (state === "ENDED" || state === "FAILED") {
-        if (activeCall) {
-          handleEndCall();
-        }
+      const current = activeCallRef.current;
+      if (!current) return;
+
+      if (state === "ACTIVE" && !connectedRef.current) {
+        connectedRef.current = true;
+        startedAtRef.current = Date.now();
+        void updateCallState(current.id, { status: "in-progress" })
+          .then(() => invalidateCallQueries())
+          .catch(() => undefined);
+      } else if (state === "FAILED") {
+        finalizeCallRef.current("failed");
+      } else if (state === "ENDED") {
+        finalizeCallRef.current("ended");
       }
     });
 
+    const onBeforeUnload = () => {
+      const current = activeCallRef.current;
+      const token = useAuthStore.getState().token;
+      if (!current || !token || finalizedCallIdRef.current === current.id) return;
+      finalizedCallIdRef.current = current.id;
+      const shouldComplete = current.simulated || connectedRef.current;
+      const elapsed = startedAtRef.current
+        ? Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000))
+        : 0;
+      void fetch(`${apiBaseUrl}/telephony/calls/${current.id}/state`, {
+        method: "PATCH",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          status: shouldComplete ? "completed" : "canceled",
+          ...(shouldComplete ? { durationSec: elapsed } : {}),
+        }),
+      }).catch(() => undefined);
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
     return () => {
       unsubscribe();
+      window.removeEventListener("beforeunload", onBeforeUnload);
     };
-  }, []);
+  }, [invalidateCallQueries]);
 
   // Call duration counter
   React.useEffect(() => {
@@ -85,7 +187,6 @@ export function CallButton({
 
   const callMutation = useMutation({
     mutationFn: async () => {
-      // 1. Pre-flight check: microphone permission
       const micCheck = await plivoWebphone.checkMicrophone();
       if (!micCheck.ok) {
         throw new Error(micCheck.error || "Microphone access blocked.");
@@ -99,7 +200,6 @@ export function CallButton({
         );
       }
 
-      // 2. Initiate CRM call record
       const res = await placeCall({
         leadId,
         contactId,
@@ -115,20 +215,41 @@ export function CallButton({
       const toNum = res.to_number || recipientPhone || "";
       const name = recipientName || "Lead / Contact";
 
-      setActiveCall({
+      connectedRef.current = !!res.simulated;
+      startedAtRef.current = res.simulated ? Date.now() : null;
+      finalizedCallIdRef.current = null;
+
+      const nextActive = {
         id: res.id,
         fromNumber: fromNum,
         toNumber: toNum,
         recipient: name,
         simulated: !!res.simulated,
-      });
+      };
+      activeCallRef.current = nextActive;
+      setActiveCall(nextActive);
 
-      // 3. Trigger Plivo In-Browser WebRTC call with tracked callId
+      if (res.simulated) {
+        void updateCallState(res.id, { status: "in-progress" })
+          .then(() => invalidateCallQueries())
+          .catch(() => undefined);
+      }
+
       if (toNum) {
         void plivoWebphone.makeCall(toNum, res.id).then((result) => {
           if (!result.ok) {
-            toast.error(result.error || "Webphone failed to connect.");
+            finalizedCallIdRef.current = res.id;
+            activeCallRef.current = null;
+            connectedRef.current = false;
+            startedAtRef.current = null;
             setActiveCall(null);
+            toast.error(result.error || "Webphone failed to connect.");
+            void updateCallState(res.id, {
+              status: "failed",
+              callError: result.error || "Webphone failed to connect",
+            })
+              .catch(() => undefined)
+              .finally(() => invalidateCallQueries());
           } else {
             if (res.simulated) {
               toast.success(`In-browser call connected to ${name} via ${fromNum} (Simulation).`);
@@ -143,18 +264,7 @@ export function CallButton({
   });
 
   const handleEndCall = () => {
-    if (!activeCall) return;
-    plivoWebphone.hangup();
-    const duration = formatTimer(callDuration);
-    toast.info(`Call ended (${duration}). Audio & call details saved to timeline.`);
-    setActiveCall(null);
-    setIsMuted(false);
-
-    // Refresh CRM activities & call logs
-    queryClient.invalidateQueries({ queryKey: ["leads"] });
-    queryClient.invalidateQueries({ queryKey: ["lead", leadId] });
-    queryClient.invalidateQueries({ queryKey: ["contact", contactId] });
-    queryClient.invalidateQueries({ queryKey: ["telephony-calls"] });
+    finalizeCall("user_hangup");
   };
 
   return (
